@@ -353,6 +353,7 @@ local mainCanvas = nil
 
 local function updateMainCanvas()
     mainCanvas = love.graphics.newCanvas( display.internalWidth, display.internalHeight )
+    mainCanvas:setFilter( "nearest", "nearest" )
 end
 
 
@@ -404,6 +405,223 @@ local function drawMainCanvas()
     love.graphics.setCanvas( mainCanvas )
     love.graphics.clear()
     love.graphics.setCanvas()
+end
+
+--#endregion
+
+
+--#region === ECS ===
+
+_G.ecs = {}
+
+
+-- Filters
+
+local function entityHasKey( entity, key )
+    return entity[ key ] ~= nil
+end
+
+
+--- @enum FilterType
+ecs.filterType = {
+    requireAll = function ( entity, ... )
+        for index = 1, select( "#", ... ) do
+            if not( entityHasKey( entity, ( select( index, ... ) ) ) ) then
+                return false
+            end
+        end
+
+        return true
+    end,
+
+    requireAny = function ( entity, ... )
+        for index = 1, select( "#", ... ) do
+            if entityHasKey( entity, ( select( index, ... ) ) ) then
+                return true
+            end
+        end
+
+        return false
+    end,
+
+    rejectAll = function ( entity, ... )
+        for index = 1, select( "#", ... ) do
+            if not( entityHasKey( entity, ( select( index, ... ) ) ) ) then
+                return true
+            end
+        end
+
+        return false
+    end,
+
+    rejectAny = function ( entity, ... )
+        for index = 1, select( "#", ... ) do
+            if entityHasKey( entity, ( select( index, ... ) ) ) then
+                return false
+            end
+        end
+
+        return true
+    end,
+}
+
+
+--- @class Filter
+--- @field private type FilterType
+--- @field private requiredComponents string[]
+--- @field private subfilters Array< Filter >
+local baseFilter = {}
+
+
+--- @private
+baseFilter.__index = baseFilter
+
+
+--- @package
+--- @param entity table
+--- @return boolean
+function baseFilter:filterEntity( entity )
+    for _, subfilter in ipairs( self.subfilters ) do
+        if not( subfilter:filterEntity( entity ) ) then return false end
+    end
+
+    if self.type then
+        if not( self.type( entity, unpack( self.requiredComponents ) ) ) then return false end
+    end
+
+    return true
+end
+
+
+--- @overload fun( type : FilterType, component : string, ... : string ) : Filter
+--- @overload fun( subfilter : Filter, ... : Filter ) : Filter
+function ecs.newFilter( ... )
+    local newFilter = {}
+    newFilter.type = nil
+    newFilter.requiredComponents = {}
+    newFilter.subfilters = newArray()
+
+    for index = 1, select ( "#", ... ) do
+        local value = ( select( index, ... ) )
+        local valueType = type( value  )
+
+        if valueType == "string" then
+            -- value is component
+            table.insert( newFilter.requiredComponents, value )
+        elseif valueType == "function" then
+            -- value is type
+            newFilter.type = value
+        elseif valueType == "table" then
+            -- value is subfilter
+            newFilter.subfilters:append( value )
+        end
+    end
+
+    setmetatable( newFilter, baseFilter )
+    return newFilter
+end
+
+
+-- System
+
+--- @class System
+--- @field private filter Filter
+--- @field private entities Array< table >
+--- @field private isPre boolean
+local baseSystem = {}
+
+
+--- @private
+baseSystem.__index = baseSystem
+
+
+--- Returns all the entities that this system will apply to with its filter.
+--- @return Array< table >
+function baseSystem:getEntities()
+    return self.entities
+end
+
+
+--- @package
+--- @param entity table
+function baseSystem:addEntity( entity )
+    if not( self.filter:filterEntity( entity ) ) then return end
+    self.entities:append( entity )
+end
+
+
+--- @package
+--- @param entity table
+function baseSystem:deleteEntity( entity )
+    self.entities:eraseSwapback( entity )
+end
+
+
+--- @package
+--- @return boolean
+function baseSystem:getIsPre()
+    return self.isPre
+end
+
+
+--- @param filter Filter
+--- @param isPre boolean
+local function newSystem( filter, isPre )
+    local obj = {}
+
+    obj.filter = filter
+    obj.entities = newArray()
+    obj.isPre = isPre
+
+    setmetatable( obj, baseSystem )
+
+    return obj
+end
+
+
+--- @class DrawSystem : System
+--- @field draw fun( entity : table )
+local baseDrawSystem = {}
+setmetatable( baseDrawSystem, baseSystem )
+
+
+--- @private
+baseDrawSystem.__index = baseDrawSystem
+
+
+--- @param filter Filter
+--- @param isPreDrawSystem boolean If true, will execute BEFORE the scene.draw function. If false it will execute AFTER.
+--- @return DrawSystem
+function ecs.newDrawSystem( filter, isPreDrawSystem )
+    local system = newSystem( filter, isPreDrawSystem )
+    system.draw = function() end
+
+    setmetatable( system, baseDrawSystem )
+
+    return system
+end
+
+
+--- @class UpdateSystem : System
+--- @field update fun( entity : table, deltaTime : number )
+local baseUpdateSystem = {}
+setmetatable( baseUpdateSystem, baseSystem )
+
+
+--- @private
+baseUpdateSystem.__index = baseUpdateSystem
+
+
+--- @param filter Filter
+--- @param isPreUpdateSystem boolean If true, will execute BEFORE the scene.update function. If false it will execute AFTER.
+--- @return UpdateSystem
+function ecs.newUpdateSystem( filter, isPreUpdateSystem )
+    local system = newSystem( filter, isPreUpdateSystem )
+    system.update = function() end
+
+    setmetatable( system, baseUpdateSystem )
+
+    return system
 end
 
 --#endregion
@@ -473,7 +691,7 @@ function sceneManager.draw()
 end
 
 
--- Scene
+-- Scenes
 
 --- @class Scene
 --- @field private preDrawSystems Array< DrawSystem >
@@ -494,34 +712,6 @@ local baseScene = {}
 baseScene.__index = baseScene
 
 
---- @package
---- @param system System
---- @param isPreDraw boolean
-function baseScene:addDrawSystem( system, isPreDraw )
-    if isPreDraw then
-        self.preDrawSystems:append( system )
-    else
-        self.postDrawSystems:append( system )
-    end
-
-    self.allSystems:append( system )
-end
-
-
---- @package
---- @param system System
---- @param isPreUpdate boolean
-function baseScene:addUpdateSystem( system, isPreUpdate )
-    if isPreUpdate then
-        self.preUpdateSystems:append( system )
-    else
-        self.postUpdateSystems:append( system )
-    end
-
-    self.allSystems:append( system )
-end
-
-
 --- @param entity table
 function baseScene:addEntity( entity )
     self.entities:append( entity )
@@ -529,6 +719,32 @@ function baseScene:addEntity( entity )
     for _, system in ipairs( self.allSystems ) do
         system:addEntity( entity )
     end
+end
+
+
+--- @param system System
+function baseScene:addSystem( system )
+    for _, entity in ipairs( self.entities ) do
+        system:addEntity( entity )
+    end
+
+    local metatable = getmetatable( system )
+
+    if metatable == baseDrawSystem then
+        if system:getIsPre() then
+            self.preDrawSystems:append( system )
+        else
+            self.postDrawSystems:append( system )
+        end
+    elseif metatable == baseUpdateSystem then
+        if system:getIsPre() then
+            self.preUpdateSystems:append( system )
+        else
+            self.postUpdateSystems:append( system )
+        end
+    end
+
+    self.allSystems:append( system )
 end
 
 
@@ -607,217 +823,5 @@ end
 setInternalDimensions( 800, 600 )
 display.updateWindowDimensions( 800, 600 )
 
-
---#endregion
-
-
---#region === ECS ===
-
-_G.ecs = {}
-
-
--- Filters
-
-local function entityHasKey( entity, key )
-    return entity[ key ] ~= nil
-end
-
-
---- @enum FilterType
-ecs.filterType = {
-    requireAll = function ( entity, ... )
-        for index = 1, select( "#", ... ) do
-            if not( entityHasKey( entity, ( select( index, ... ) ) ) ) then
-                return false
-            end
-        end
-
-        return true
-    end,
-
-    requireAny = function ( entity, ... )
-        for index = 1, select( "#", ... ) do
-            if entityHasKey( entity, ( select( index, ... ) ) ) then
-                return true
-            end
-        end
-
-        return false
-    end,
-
-    rejectAll = function ( entity, ... )
-        for index = 1, select( "#", ... ) do
-            if not( entityHasKey( entity, ( select( index, ... ) ) ) ) then
-                return true
-            end
-        end
-
-        return false
-    end,
-
-    rejectAny = function ( entity, ... )
-        for index = 1, select( "#", ... ) do
-            if entityHasKey( entity, ( select( index, ... ) ) ) then
-                return false
-            end
-        end
-
-        return true
-    end,
-}
-
-
-
---- @class Filter
---- @field private type FilterType
---- @field private requiredComponents string[]
---- @field private subfilters Array< Filter >
-local baseFilter = {}
-
-
---- @private
-baseFilter.__index = baseFilter
-
-
---- @package
---- @param entity table
---- @return boolean
-function baseFilter:filterEntity( entity )
-    for _, subfilter in ipairs( self.subfilters ) do
-        if not( subfilter:filterEntity( entity ) ) then return false end
-    end
-
-    if self.type then
-        if not( self.type( entity, unpack( self.requiredComponents ) ) ) then return false end
-    end
-
-    return true
-end
-
-
---- @overload fun( type : FilterType, component : string, ... : string ) : Filter
---- @overload fun( subfilter : Filter, ... : Filter ) : Filter
-function ecs.newFilter( ... )
-    local newFilter = {}
-    newFilter.type = nil
-    newFilter.requiredComponents = {}
-    newFilter.subfilters = newArray()
-
-    for index = 1, select ( "#", ... ) do
-        local value = ( select( index, ... ) )
-        local valueType = type( value  )
-
-        if valueType == "string" then
-            -- value is component
-            table.insert( newFilter.requiredComponents, value )
-        elseif valueType == "function" then
-            -- value is type
-            newFilter.type = value
-        elseif valueType == "table" then
-            -- value is subfilter
-            newFilter.subfilters:append( value )
-        end
-    end
-
-    setmetatable( newFilter, baseFilter )
-    return newFilter
-end
-
-
--- System
-
---- @class System
---- @field private filter Filter
---- @field private entities Array< table >
-local baseSystem = {}
-
-
---- @private
-baseSystem.__index = baseSystem
-
-
---- @package
---- @param entity table
-function baseSystem:addEntity( entity )
-    if not( self.filter:filterEntity( entity ) ) then return end
-    self.entities:append( entity )
-end
-
-
---- @package
---- @param entity table
-function baseSystem:deleteEntity( entity )
-    self.entities:eraseSwapback( entity )
-end
-
-
---- @package
---- @return Array< table >
-function baseSystem:getEntities()
-    return self.entities
-end
-
-
-local function newSystem( filter )
-    local obj = {}
-
-    obj.filter = filter
-    obj.entities = newArray()
-
-    setmetatable( obj, baseSystem )
-
-    return obj
-end
-
-
---- @class DrawSystem : System
---- @field draw fun( entity : table )
-local baseDrawSystem = {}
-setmetatable( baseDrawSystem, baseSystem )
-
-
---- @private
-baseDrawSystem.__index = baseDrawSystem
-
-
---- @param filter Filter
---- @param scene Scene
---- @param isPreDrawSystem boolean If true, will execute BEFORE the scene.draw function. If false it will execute AFTER.
---- @return DrawSystem
-function ecs.newDrawSystem( filter, scene, isPreDrawSystem )
-    local system = newSystem( filter )
-
-    setmetatable( system, baseDrawSystem )
-
-    scene:addDrawSystem( system, isPreDrawSystem )
-
-    return system
-end
-
-
---- @class UpdateSystem : System
---- @field update fun( entity : table, deltaTime : number )
-local baseUpdateSystem = {}
-setmetatable( baseUpdateSystem, baseSystem )
-
-
---- @private
-baseUpdateSystem.__index = baseUpdateSystem
-
-
---- @param filter Filter
---- @param scene Scene
---- @param isPreUpdateSystem boolean If true, will execute BEFORE the scene.update function. If false it will execute AFTER.
---- @return UpdateSystem
-function ecs.newUpdateSystem( filter, scene, isPreUpdateSystem )
-    local system = newSystem( filter )
-    system.update = function() end
-
-    setmetatable( system, baseUpdateSystem )
-
-    scene:addUpdateSystem( system, isPreUpdateSystem )
-
-    return system
-end
 
 --#endregion
