@@ -29,6 +29,7 @@ end
 
 
 _G.newColor = newColor
+
 --#endregion
 
 
@@ -472,7 +473,7 @@ function sceneManager.draw()
 end
 
 
--- Scenes
+-- Scene
 
 --- @class Scene
 --- @field private preDrawSystems Array< DrawSystem >
@@ -781,7 +782,7 @@ baseDrawSystem.__index = baseDrawSystem
 
 --- @param filter Filter
 --- @param scene Scene
---- @param isPreDrawSystem boolean
+--- @param isPreDrawSystem boolean If true, will execute BEFORE the scene.draw function. If false it will execute AFTER.
 --- @return DrawSystem
 function ecs.newDrawSystem( filter, scene, isPreDrawSystem )
     local system = newSystem( filter )
@@ -806,7 +807,7 @@ baseUpdateSystem.__index = baseUpdateSystem
 
 --- @param filter Filter
 --- @param scene Scene
---- @param isPreUpdateSystem boolean
+--- @param isPreUpdateSystem boolean If true, will execute BEFORE the scene.update function. If false it will execute AFTER.
 --- @return UpdateSystem
 function ecs.newUpdateSystem( filter, scene, isPreUpdateSystem )
     local system = newSystem( filter )
