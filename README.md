@@ -63,7 +63,7 @@ controlSystem.update = function ( entity, deltaTime )
 end
 
 -- Make a player "entity"
-local player ={ x = 30, y = 65, width = 300, height = 200, color = red }
+local player = { x = 30, y = 65, width = 300, height = 200, color = red }
 
 -- Add the player to the scene
 scene:addEntity( player )
