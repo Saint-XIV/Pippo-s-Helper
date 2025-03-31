@@ -1,4 +1,4 @@
-# Pippo-s-Helper
+# Pippo's Helper
 Scene manager, ECS, and other stuff for Love2D
 
 ## Example - Minimum Setup
