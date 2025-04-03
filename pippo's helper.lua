@@ -33,6 +33,47 @@ _G.newColor = newColor
 --#endregion
 
 
+--#region === SOUNDS ===
+
+--- @class Sound
+--- @field private source love.Source
+local sound = {}
+
+
+--- @private
+sound.__index = sound
+
+
+function sound:playOnce()
+    local clone = self.source:clone()
+    clone:play()
+end
+
+
+function sound:startLoop()
+    local source = self.source
+    source:setLooping( true )
+    source:play()
+end
+
+
+function sound:stopLoop()
+    self.source:stop()
+end
+
+
+--- @param filepath string
+--- @param type love.SourceType?
+--- @return Sound
+_G.newSound = function ( filepath, type )
+    local obj = { source = love.audio.newSource( filepath, type or "static" ) }
+    setmetatable( obj, sound )
+    return obj
+end
+
+--#endregion
+
+
 --#region === ARRAY ===
 
 --- @class Array<T>: { [integer]: T }
