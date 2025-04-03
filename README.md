@@ -3,7 +3,7 @@
  * Scene manager
  * Resolution handling
  * Entity component system
- * Classic classes
+ * [Classic](https://github.com/rxi/classic) classes (slightly modified)
  * Draw helpers
  * Sound helpers
 
