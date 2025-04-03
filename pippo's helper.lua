@@ -74,6 +74,72 @@ end
 --#endregion
 
 
+--#region === CLASS ===
+
+--- @class Class
+--- @field super any
+local class = {}
+
+
+--- @private
+class.__index = class
+
+
+function class:extend()
+    local table = {}
+
+    for key, value in pairs( self ) do
+        if key:find( "__" ) == 1 then
+            table[ key ] = value
+        end
+    end
+
+    table.__index = table
+    table.super = self
+
+    setmetatable( table, self )
+
+    return table
+end
+
+
+--- @protected
+function class:init( ... ) end
+
+
+--- @return boolean
+function class:is( classType )
+    local metatable = getmetatable( self )
+
+    while metatable do
+
+        if metatable == classType then
+            return true
+        end
+
+        metatable = getmetatable( metatable )
+
+    end
+
+    return false
+end
+
+
+--- @private
+function class:__call( ... )
+    local object = setmetatable( {}, self )
+    object:init( ... )
+    return object
+end
+
+
+_G.newClass = function ()
+    return class:extend()
+end
+
+--#endregion
+
+
 --#region === ARRAY ===
 
 --- @class Array<T>: { [integer]: T }
