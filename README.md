@@ -1,5 +1,11 @@
 # Pippo's Helper
-Scene manager, ECS, and other stuff for Love2D
+### Pippo's helper includes but is not limited to:
+ * Scene manager
+ * Resolution handling
+ * Entity component system
+ * Classic classes
+ * Draw helpers
+ * Sound helpers
 
 ## Example - Minimum Setup
 ```lua
