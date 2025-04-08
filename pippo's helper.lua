@@ -33,47 +33,6 @@ _G.newColor = newColor
 --#endregion
 
 
---#region === SOUNDS ===
-
---- @class Sound
---- @field private source love.Source
-local sound = {}
-
-
---- @private
-sound.__index = sound
-
-
-function sound:playOnce()
-    local clone = self.source:clone()
-    clone:play()
-end
-
-
-function sound:startLoop()
-    local source = self.source
-    source:setLooping( true )
-    source:play()
-end
-
-
-function sound:stopLoop()
-    self.source:stop()
-end
-
-
---- @param filepath string
---- @param type love.SourceType?
---- @return Sound
-_G.newSound = function ( filepath, type )
-    local obj = { source = love.audio.newSource( filepath, type or "static" ) }
-    setmetatable( obj, sound )
-    return obj
-end
-
---#endregion
-
-
 --#region === CLASS ===
 
 --- @class Class
@@ -230,6 +189,191 @@ end
 
 
 _G.newArray = newArray
+
+--#endregion
+
+
+--#region === SPRING ===
+
+
+--- @class Spring
+--- @field private stiffness number
+--- @field private dampening number
+--- @field private mass number
+--- @field private velocity number
+--- @field private target number
+--- @field private value number
+--- @field private initValue number
+local spring = {}
+
+
+--- @private
+spring.__index = spring
+
+
+--- @param deltaTime number
+function spring:update( deltaTime )
+    local velocity, target, value = self.velocity, self.target, self.value
+
+    -- Early exit
+    if value == target and velocity == 0 then return end
+
+    local stiffness, dampening, mass = self.stiffness, self.dampening, self.mass
+    local delta = value - target
+
+    local springForce = -stiffness * delta
+    local dampeningForce = -dampening * velocity
+    local totalForce = springForce + dampeningForce
+    local acceleration = totalForce / mass
+
+    self.velocity = velocity + acceleration * deltaTime
+    self.value = value + self.velocity * deltaTime
+end
+
+
+--- @param to number?
+function spring:reset( to )
+    self.value = to or self.initValue
+    self.velocity = 0
+end
+
+
+--- @param impulse number
+function spring:applyImpulse( impulse )
+    self.velocity = impulse
+end
+
+
+--- @param newTarget number
+function spring:setTarget( newTarget )
+    self.target = newTarget
+end
+
+
+--- @return number
+function spring:getValue()
+    return self.value
+end
+
+
+--- @param stiffness number
+--- @param dampening number
+--- @param mass number
+--- @param initValue number
+--- @return Spring
+function _G.newSpring( stiffness, dampening, mass, initValue )
+    local obj = {
+        stiffness = stiffness,
+        dampening = dampening,
+        mass = mass,
+        target = initValue or 0,
+        velocity = 0,
+        value = initValue or 0,
+        initValue = initValue or 0
+    }
+
+    setmetatable( obj, spring )
+
+    return obj
+end
+
+--#endregion
+
+
+--#region === STATE MACHINE ===
+
+-- State Machine
+--- @class StateMachine
+--- @field private currentState State
+local stateMachine = {}
+
+
+--- @package
+--- @return boolean
+function stateMachine:earlyExit()
+    if not( self.currentState ) then return true end
+    if not( self.currentState.update ) then return true end
+    return false
+end
+
+
+--- @param deltaTime number
+function stateMachine:update( deltaTime )
+    if self:earlyExit() then return end
+
+    self.currentState.update( deltaTime )
+end
+
+
+function stateMachine:draw()
+    if self:earlyExit() then return end
+
+    self.currentState.draw()
+end
+
+
+--- @param newState State
+function stateMachine:changeState( newState )
+    if self.currentState and self.currentState.exit then
+        self.currentState.exit()
+    end
+
+    if newState.enter then newState.enter() end
+
+    self.currentState = newState
+end
+
+
+function _G.newStateMachine()
+    local obj = { currentState = nil }
+    setmetatable( obj, stateMachine )
+    return obj
+end
+
+
+--- @private
+stateMachine.__index = stateMachine
+
+
+-- State
+--- @class State
+--- @field enter fun()
+--- @field exit fun()
+--- @field update fun( deltaTime : number )
+--- @field draw fun()
+
+
+--- @return State
+function _G.newState()
+    return {}
+end
+
+
+--#endregion
+
+
+--#region === COMMAND ===
+
+-- Command Result
+
+
+--- @class Command
+--- @field perform fun( ... ) : CommandResult
+
+
+--- @enum CommandResult
+_G.commandResult = {
+    SUCCESS = 0,
+    FAILURE = 1
+}
+
+
+
+--- @return Command
+function  _G.newCommand()
+    return {}
+end
+
 
 --#endregion
 
