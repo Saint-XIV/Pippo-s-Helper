@@ -5,7 +5,12 @@
  * Entity component system
  * [Classic](https://github.com/rxi/classic) classes (slightly modified)
  * Draw helpers
- * Sound helpers
+ * Color helper
+ * Array class with helper functions
+ * Spring tween
+ * State machine
+ * Command pattern
+ * Math helpers
 
 ## Example - Minimum Setup
 ```lua
