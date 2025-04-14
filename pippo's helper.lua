@@ -1,3 +1,9 @@
+--- @type Scene
+local currentScene = nil
+local min, max = math.min, math.max
+
+
+
 --#region === TEACHER ===
 
 _G.teacher = {}
@@ -136,6 +142,18 @@ function list:back()
 end
 
 
+--- @return any
+function list:popFront()
+    return table.remove( self, 1 )
+end
+
+
+--- @return any
+function list:front()
+    return self[ 1 ]
+end
+
+
 --- @private
 function list:__tostring()
     local result = "[ "
@@ -163,270 +181,57 @@ function teacher.makeList( ... )
     return object
 end
 
---#endregion
 
-
---#region === SPRING ===
-
-
---- @class Spring
---- @field private stiffness number
---- @field private dampening number
---- @field private mass number
---- @field private velocity number
---- @field private target number
---- @field private value number
---- @field private initValue number
-local spring = {}
-
+-- Queue
+--- @class Queue
+--- @field private first number
+--- @field private last number
+local queue = {}
 
 --- @private
-spring.__index = spring
+queue.__index = queue
 
 
---- @param deltaTime number
-function spring:update( deltaTime )
-    local velocity, target, value = self.velocity, self.target, self.value
-
-    -- Early exit
-    if value == target and velocity == 0 then return end
-
-    local stiffness, dampening, mass = self.stiffness, self.dampening, self.mass
-    local delta = value - target
-
-    local springForce = -stiffness * delta
-    local dampeningForce = -dampening * velocity
-    local totalForce = springForce + dampeningForce
-    local acceleration = totalForce / mass
-
-    self.velocity = velocity + acceleration * deltaTime
-    self.value = value + self.velocity * deltaTime
+--- @return Queue
+function teacher.makeQueue()
+    return setmetatable( { first = 0, last = -1 }, queue )
 end
 
 
---- @param to number?
-function spring:reset( to )
-    self.value = to or self.initValue
-    self.velocity = 0
+--- @param thing any
+function queue:enqueue( thing )
+    local last = self.last + 1
+    self.last = last
+    self[ last ] = thing
 end
 
 
---- @param impulse number
-function spring:applyImpulse( impulse )
-    self.velocity = impulse
+--- @return any
+function queue:next()
+    local first = self.first
+    local value = self[ first ]
+
+    self[ first ] = nil
+    self.first = first + 1
+
+    return value
 end
 
 
---- @param newTarget number
-function spring:setTarget( newTarget )
-    self.target = newTarget
-end
-
-
---- @return number
-function spring:getValue()
-    return self.value
-end
-
-
---- @param stiffness number
---- @param dampening number
---- @param mass number
---- @param initValue number
---- @return Spring
-function _G.newSpring( stiffness, dampening, mass, initValue )
-    local obj = {
-        stiffness = stiffness,
-        dampening = dampening,
-        mass = mass,
-        target = initValue or 0,
-        velocity = 0,
-        value = initValue or 0,
-        initValue = initValue or 0
-    }
-
-    setmetatable( obj, spring )
-
-    return obj
-end
-
---#endregion
-
-
---#region === STATE MACHINE ===
-
--- State Machine
---- @class StateMachine
---- @field private currentState State
-local stateMachine = {}
-
-
---- @package
---- @return boolean
-function stateMachine:earlyExit()
-    if not( self.currentState ) then return true end
-    if not( self.currentState.update ) then return true end
-    return false
-end
-
-
---- @param deltaTime number
-function stateMachine:update( deltaTime )
-    if self:earlyExit() then return end
-
-    self.currentState.update( deltaTime )
-end
-
-
-function stateMachine:draw()
-    if self:earlyExit() then return end
-
-    self.currentState.draw()
-end
-
-
---- @param newState State
-function stateMachine:changeState( newState )
-    if self.currentState and self.currentState.exit then
-        self.currentState.exit()
+function queue:clear()
+    for index, _ in ipairs( self ) do
+        self[ index ] = nil
     end
 
-    if newState.enter then newState.enter() end
-
-    self.currentState = newState
+    self.first = 0 self.last = -1
 end
 
 
-function _G.newStateMachine()
-    local obj = { currentState = nil }
-    setmetatable( obj, stateMachine )
-    return obj
+--- @return boolean
+function queue:isEmpty()
+    return self.first > self.last
 end
 
-
---- @private
-stateMachine.__index = stateMachine
-
-
--- State
---- @class State
---- @field enter fun()
---- @field exit fun()
---- @field update fun( deltaTime : number )
---- @field draw fun()
-
-
---- @return State
-function _G.newState()
-    return {}
-end
-
-
---#endregion
-
-
---#region === COMMAND ===
-
--- Command Result
-
-
---- @class Command
---- @field perform fun( ... ) : CommandResult
-
-
---- @enum CommandResult
-_G.commandResult = {
-    SUCCESS = 0,
-    FAILURE = 1
-}
-
-
-
---- @return Command
-function  _G.newCommand()
-    return {}
-end
-
-
---#endregion
-
-
---#region === MATH ===
-
---- @param totalTime number
---- @param stagesPerSecond integer
---- @param stages integer
---- @return integer
-function math.step( totalTime, stagesPerSecond, stages )
-    return math.floor( totalTime * stagesPerSecond ) % stages + 1
-end
-
-
---- @param x1 number
---- @param y1 number
---- @param x2 number
---- @param y2 number
---- @return number
-function math.distance( x1, y1, x2, y2 )
-    local pow, sqrt = math.pow, math.sqrt
-    return sqrt( pow( x2 - x1, 2 ) + pow( y2 - y1, 2 ) )
-end
-
-
---- @param a number
---- @param b number
---- @return number
-function math.pythagoras( a, b )
-    return math.sqrt( a*a + b*b )
-end
-
-
---- @param a number
---- @param b number
---- @param time number
---- @return number
-function math.lerp( a, b, time )
-    return ( 1 - time ) * a + time * b
-end
-
-
---- @param value number
---- @param inMin number
---- @param inMax number
---- @param outMin number
---- @param outMax number
---- @return number
-function math.mapToRange( value, inMin, inMax, outMin, outMax )
-    local time = ( value - inMin ) / ( inMax - inMin )
-    return math.lerp( outMin, outMax, time )
-end
-
-
---- @param n number
---- @param min number
---- @param max number
---- @return number
-function math.clamp( n, min, max )
-    return math.min( max, math.max( min, n ) )
-end
-
-
---- First is the "origin", second is where its pointing
---- @param x1 number
---- @param y1 number
---- @param x2 number
---- @param y2 number
---- @return number
-function math.dirBetweenPoints( x1, y1, x2, y2 )
-    return math.atan2( y2 - y1, x2 - x1 )
-end
-
-
-math.random = love.math.random
-
-
-math.twopi = math.pi * 2
-math.halfpi = math.pi * 0.5
 
 --#endregion
 
@@ -436,17 +241,7 @@ math.halfpi = math.pi * 0.5
 _G.artist = {}
 
 
-local function setLineWidth( newLineWidth )
-    if not( newLineWidth ) then love.graphics.setLineWidth( 1 ) return end
-    love.graphics.setLineWidth( newLineWidth )
-end
-
-
-local function setColor( color )
-    if not( color ) then love.graphics.setColor( 1, 1, 1, 1 ) return end
-    color:setDrawColor()
-end
-
+-- Color
 
 --- @class Color
 --- @field red integer
@@ -458,6 +253,16 @@ local baseColor = {}
 
 --- @private
 baseColor.__index = baseColor
+
+function baseColor:setDrawColor()
+    love.graphics.setColor( self:scaleToOne() )
+end
+
+
+--- @return number, number, number, number
+function baseColor:scaleToOne()
+    return self.red / 255, self.green / 255, self.blue / 255, self.alpha / 255
+end
 
 
 --- @param red integer
@@ -471,33 +276,30 @@ function artist.mixPaint( red, green, blue, alpha )
 end
 
 
-function baseColor:setDrawColor()
-    love.graphics.setColor( self.red / 255, self.green / 255, self.blue / 255, self.alpha / 255 )
+-- Helpers
+
+local function setLineWidth( newLineWidth )
+    if not( newLineWidth ) then love.graphics.setLineWidth( 1 ) return end
+    love.graphics.setLineWidth( newLineWidth )
 end
 
+
+local function setColor( color )
+    if not( color ) then love.graphics.setColor( 1, 1, 1, 1 ) return end
+    color:setDrawColor()
+end
+
+
+-- Draw functions
 
 --- @param mode love.DrawMode
 --- @param points table< number >
 --- @param color Color?
 --- @param lineWidth number?
-function artist.drawPolygon( mode, points, color, lineWidth )
+function artist.paintPolygon( mode, points, color, lineWidth )
     setColor( color )
     setLineWidth( lineWidth )
     love.graphics.polygon( mode, points )
-end
-
-
---- @param mode love.DrawMode
---- @param centerX number
---- @param centerY number
---- @param width number
---- @param height number
---- @param color Color?
---- @param lineWidth number?
-function artist.drawRectangleCentered( mode, centerX, centerY, width, height, color, lineWidth )
-    setColor( color )
-    setLineWidth( lineWidth )
-    love.graphics.rectangle( mode, centerX - width * 0.5, centerY - height * 0.5, width, height )
 end
 
 
@@ -508,7 +310,7 @@ end
 --- @param height number
 --- @param color Color?
 --- @param lineWidth number?
-function artist.drawRectangle( mode, x, y, width, height, color, lineWidth )
+function artist.paintRectangle( mode, x, y, width, height, color, lineWidth )
     setColor( color )
     setLineWidth( lineWidth )
     love.graphics.rectangle( mode, x, y, width, height )
@@ -522,11 +324,11 @@ end
 --- @param height number
 --- @param color Color?
 --- @param lineWidth number?
-function artist.drawRectangleRound( mode, x, y, width, height, color, lineWidth )
+function artist.paintRectangleRound( mode, x, y, width, height, color, lineWidth )
     setColor( color )
     setLineWidth( lineWidth )
 
-    local rounding = math.min( width * 0.1, height * 0.1 )
+    local rounding = min( width * 0.1, height * 0.1 )
 
     love.graphics.rectangle( mode, x, y, width, height, rounding, rounding )
 end
@@ -538,7 +340,7 @@ end
 --- @param radius number
 --- @param color Color?
 --- @param lineWidth number?
-function artist.drawCircle( mode, x, y, radius, color, lineWidth )
+function artist.paintCircle( mode, x, y, radius, color, lineWidth )
     setColor( color )
     setLineWidth( lineWidth )
     love.graphics.circle( mode, x, y, radius )
@@ -549,7 +351,7 @@ end
 --- @param x number
 --- @param y number
 --- @param color Color?
-function artist.drawTexture( texture, x, y, color )
+function artist.paintTexture( texture, x, y, color )
     setColor( color )
     love.graphics.draw( texture, x, y )
 end
@@ -696,765 +498,139 @@ local defualtFont = writer.makeFont( 12 )
 --#endregion
 
 
---#region === GUI ===
+--#region === MATH ===
+
+--- @param totalTime number
+--- @param stagesPerSecond integer
+--- @param stages integer
+--- @return integer
+function math.step( totalTime, stagesPerSecond, stages )
+    return math.floor( totalTime * stagesPerSecond ) % stages + 1
+end
 
 
-_G.gui = {}
+--- @param x1 number
+--- @param y1 number
+--- @param x2 number
+--- @param y2 number
+--- @return number
+function math.distance( x1, y1, x2, y2 )
+    local pow, sqrt = math.pow, math.sqrt
+    return sqrt( pow( x2 - x1, 2 ) + pow( y2 - y1, 2 ) )
+end
 
 
-local elementStack = teacher.makeList()
+--- @param a number
+--- @param b number
+--- @return number
+function math.pythagoras( a, b )
+    return math.sqrt( a*a + b*b )
+end
 
 
---- @enum GUI.Sizing
-gui.sizing = {
-    expand = "expand",
-    shrink = "shrink"
+--- @param a number
+--- @param b number
+--- @param time number
+--- @return number
+function math.lerp( a, b, time )
+    return ( 1 - time ) * a + time * b
+end
+
+
+--- @param value number
+--- @param inMin number
+--- @param inMax number
+--- @param outMin number
+--- @param outMax number
+--- @return number
+function math.mapToRange( value, inMin, inMax, outMin, outMax )
+    local time = ( value - inMin ) / ( inMax - inMin )
+    return math.lerp( outMin, outMax, time )
+end
+
+
+--- @param n number
+--- @param minN number
+--- @param maxN number
+--- @return number
+function math.clamp( n, minN, maxN )
+    return min( maxN, max( minN, n ) )
+end
+
+
+--- First is the "origin", second is where its pointing
+--- @param x1 number
+--- @param y1 number
+--- @param x2 number
+--- @param y2 number
+--- @return number
+function math.dirBetweenPoints( x1, y1, x2, y2 )
+    return math.atan2( y2 - y1, x2 - x1 )
+end
+
+
+math.random = love.math.random
+
+
+math.twopi = math.pi * 2
+math.halfpi = math.pi * 0.5
+
+--#endregion
+
+
+--#region === INPUT ===
+
+_G.input = {}
+
+
+--- @enum MouseButton
+input.mouseButton = {
+    left = 1,
+    right = 2,
+    middle = 3
 }
 
 
---- @enum GUI.LayoutDirection
-gui.layoutDirection = {
-    leftToRight = "leftToRight",
-    topToBottom = "topToBottom"
-}
+local keysDown = teacher.makeList()
+local keysJustPressed = teacher.makeList()
+local mouseButtonsDown = teacher.makeList()
+local mouseButtonsJustPressed = teacher.makeList()
+local mouseX, mouseY = 0, 0
 
 
---- @class GUI.Element
---- @field private parent GUI.Element?
---- @field private children List<GUI.Element>
---- @field private sizing { width : GUI.Sizing|number, height : GUI.Sizing|number }
---- @field private width number
---- @field private height number
---- @field private minWidth number
---- @field private minHeight number
---- @field private backgroundColor Color
---- @field private x number
---- @field private y number
---- @field private padding { left : number, right : number, top : number, bottom : number }
---- @field private layoutDirection GUI.LayoutDirection
---- @field private childSpacing number
---- @field private color Color
---- @field private textAlign love.AlignMode
---- @field private font Font
---- @field private textSize number
---- @field private rounded boolean
---- @field private texture love.Texture
-local base = {}
-
-
---- @param setup {
---- backgroundColor : Color,
---- sizing : { width : GUI.Sizing|number, height : GUI.Sizing | number },
---- position : { x : number, y : number },
---- padding : { left : number, right : number, top : number, bottom : number },
---- layoutDirection : GUI.LayoutDirection,
---- childSpacing : number,
---- color : Color,
---- text : string,
---- textAlign : love.AlignMode,
---- font : Font,
---- textSize : number,
---- rounded : boolean,
---- texture : love.Texture,
---- file : string,
---- }
---- @return GUI.Element
----
-function gui.newSlime( setup )
-    local obj = setmetatable( {}, base )
-    obj:init( setup )
-
-    if not( elementStack:isEmpty() ) then
-        local parent = elementStack:back()
-        parent:addChild( obj )
-    end
-
-    elementStack:append( obj )
-    return obj
+--- @param key love.KeyConstant
+--- @return boolean
+function input.isKeyDown( key )
+    return keysDown:has( key )
 end
 
 
---- @package
-function base:init( setup )
-    self.parent = nil
-    self.children = teacher.makeList()
-
-    self:setupBackgroundColor( setup.backgroundColor )
-    self:setupPosition( setup.position )
-    self:setupSizing( setup.sizing )
-    self:setupPadding( setup.padding )
-    self:setupTextAlign( setup.textAlign )
-    self:setupTextSize( setup.textSize )
-    self:setupFont( setup.font )
-    self:setupText( setup.text )
-    self:setupLayoutDirection( setup.layoutDirection )
-    self:setupChildSpacing( setup.childSpacing )
-    self:setupColor( setup.color )
-    self:setupRounded( setup.rounded )
-    self:setupTexture( setup.texture )
-    self:setupFile( setup.file )
+--- @param key love.KeyConstant
+--- @return boolean
+function input.isKeyJustPressed( key )
+    return keysJustPressed:has( key )
 end
 
 
--- Setup Functions
-
---- @private
-function base:setupBackgroundColor( color )
-    if not( color ) then
-        self.backgroundColor = artist.mixPaint( 0, 0, 0, 0 )
-    else
-        self.backgroundColor = color
-    end
+--- @param button MouseButton
+--- @return boolean
+function input.isMouseButtonDown( button )
+    return mouseButtonsDown:has( button )
 end
 
 
---- @private
-function base:setupPosition( position )
-    if not( position ) then
-        self.x = 0
-        self.y = 0
-    else
-        self.x = position.x
-        self.y = position.y
-
-        if not( position.x ) then self.x = 0 end
-        if not( position.y ) then self.y = 0 end
-    end
+--- @param button MouseButton
+--- @return boolean
+function input.isMouseButtonJustPressed( button )
+    return mouseButtonsJustPressed:has( button )
 end
 
 
---- @private
-function base:setupSizing( sizing )
-    -- Defaults if no sizing provided
-    if not( sizing ) then
-        self.sizing = { width = gui.sizing.shrink, hegiht = gui.sizing.shrink }
-    else
-        self.sizing = sizing
-
-        -- Check if only width or height was set
-        if not( sizing.width ) then
-            self.sizing.width = gui.sizing.shrink
-        end
-
-        if not( sizing.height ) then
-            self.sizing.height = gui.sizing.shrink
-        end
-    end
-
-    if type( self.sizing.width ) == "number" then
-        self.width = sizing.width
-        self.minWidth = sizing.width
-    else
-        self.width = 0
-        self.minWidth = 0
-    end
-
-    if type( self.sizing.height ) == "number" then
-        self.height = sizing.height
-        self.minHeight = sizing.height
-    else
-        self.height = 0
-        self.minHeight = 0
-    end
+--- @return number, number
+function input.getMousePosition()
+    return mouseX, mouseY
 end
 
-
---- @private
-function base:setupPadding( padding )
-    if not( padding ) then
-        self.padding = { bottom = 0, left = 0, right = 0, top = 0 }
-        return
-    end
-
-    self.padding = padding
-
-    if not( padding.left ) then self.padding.left = 0 end
-    if not( padding.right ) then self.padding.right = 0 end
-    if not( padding.top ) then self.padding.top = 0 end
-    if not( padding.bottom ) then self.padding.bottom = 0 end
-end
-
-
---- @private
-function base:setupLayoutDirection( direction )
-    if not( direction ) then
-        self.layoutDirection = gui.layoutDirection.leftToRight
-        return
-    end
-
-    self.layoutDirection = direction
-end
-
-
---- @private
-function base:setupChildSpacing( spacing )
-    if not( spacing ) then
-        self.childSpacing = 0
-        return
-    end
-
-    self.childSpacing = spacing
-end
-
-
---- @private
-function base:setupColor( color )
-    if not( color ) then
-        self.color = artist.mixPaint( 0, 0, 0 )
-        return
-    end
-
-    self.color = color
-end
-
-
---- @private
-function base:setupTextAlign( align )
-    if not( align ) then self.textAlign = "left" return end
-    self.textAlign = align
-end
-
-
---- @private
-function base:setupTextSize( size )
-    if not( size ) then self.textSize = 12 return end
-    self.textSize = size
-end
-
-
---- @private
-function base:setupFont( font )
-    if not( font ) then self.font = defualtFont return end
-    self.font = font
-end
-
-
---- @private
-function base:setupText( text )
-    if not( text ) then
-        self.text = nil
-        return
-    end
-
-    self.text = text
-
-    local font = self.font:getFont( self.textSize )
-    local widest = 0
-
-    for word in string.gmatch( text, "%S+" ) do
-        widest = math.max( widest, font:getWidth( word ) )
-    end
-
-    local padding = self.padding
-
-    self.minWidth = widest + padding.right + padding.left
-    self.width = font:getWidth( text )
-end
-
-
---- @private
-function base:setupRounded( isRounded )
-    if isRounded then self.rounded = true return end
-    self.rounded = false
-end
-
-
---- @private
-function base:setupFile( filepath )
-    if not( filepath ) then return end
-    self:setupTexture( love.graphics.newImage( filepath ) )
-end
-
-
---- @private
---- @param texture love.Texture
-function base:setupTexture( texture )
-    if not( texture ) then self.texture = nil return end
-
-    self.texture = texture
-
-    self.minHeight = self.minHeight + texture:getHeight()
-    self.minWidth = self.minWidth + texture:getWidth()
-
-    self.width = self.minWidth
-    self.height = self.minHeight
-end
-
-
--- Child and Parents
-
---- @package
---- @param child  GUI.Element
-function base:addChild( child )
-    child:setParent( self )
-    self.children:append( child )
-end
-
-
-function gui.gatherSlimelets()
-    assert( not( elementStack:isEmpty() ) )
-
-    --- @type GUI.Element
-    local element = elementStack:popBack()
-    element:close()
-end
-
-
---- @return GUI.Element
-function base:__call()
-    gui.gatherSlimelets()
-    return self
-end
-
-
---- @package
-function base:close()
-    self:fitShrinkWidths()
-    self:expandAndShrinkWidths()
-    self:wrapText()
-    self:fitShrinkHeights()
-    self:expandAndShrinkHeights()
-end
-
-
---- @package
-function base:fitShrinkWidths()
-    local padding = self.padding
-
-    self.width = self.width + padding.left + padding.right
-
-    local parent = self.parent
-
-    if not( parent ) then
-        if not( self.sizing.width == gui.sizing.shrink ) then return end
-
-        local max = math.max
-
-        for _, child in ipairs( self.children ) do
-            self.width = max( self.width, child.width + padding.left + padding.right )
-        end
-
-        return
-    end
-
-    local childSpacing = ( parent:getAmountOfChildren() - 1 ) * parent.childSpacing
-    local parentSizing = parent.sizing
-
-    -- Left to Right
-    if parent:getLayoutDirection() == gui.layoutDirection.leftToRight then
-        if not( parentSizing.width == gui.sizing.shrink ) then return end
-
-        parent.width = parent.width + childSpacing
-        parent.width = parent.width + self.width
-        parent.minWidth = parent.minWidth + self.minWidth
-
-    -- Top to Bottom
-    else
-        if not( parentSizing.width == gui.sizing.shrink ) then return end
-
-        parent.width = math.max( parent.width, self.width )
-        parent.minWidth = math.max( parent.width, self.minWidth)
-    end
-end
-
---- @package
-function base:expandAndShrinkWidths()
-    local padding = self.padding
-    local remainingWidth = self.width - padding.left - padding.right
-    local maxWidth = remainingWidth
-
-    --- @type List<GUI.Element>, List<GUI.Element>
-    local growable, shrinkable = teacher.makeList(), teacher.makeList()
-
-    local max, min = math.max, math.min
-
-    for _, child in ipairs( self.children ) do
-        remainingWidth = remainingWidth - child.width
-
-        if child.sizing.width == gui.sizing.expand then growable:append( child ) end
-        if child.width > child.minWidth then shrinkable:append( child ) end
-    end
-
-    remainingWidth = remainingWidth - ( #self.children - 1 ) * self.childSpacing
-
-    -- Left to Right
-    if self.layoutDirection == gui.layoutDirection.leftToRight then
-        -- Grow
-        while remainingWidth > 0 and not( growable:isEmpty() ) do
-            local smallest = growable[1].width
-            local secondSmallest = math.huge
-            local widthToAdd = remainingWidth
-
-            for _, child in ipairs( growable ) do
-                local width = child.width
-
-                if width < smallest then
-                    secondSmallest = smallest
-                    smallest = width
-                end
-
-                if width > smallest then
-                    secondSmallest = min( secondSmallest, width )
-                    widthToAdd = secondSmallest - smallest
-                end
-            end
-
-            widthToAdd = min( widthToAdd, remainingWidth / #growable )
-
-            for _, child in ipairs( growable ) do
-                if not( child.width == smallest ) then goto skip end
-
-                child.width = child.width + widthToAdd
-                remainingWidth = remainingWidth - widthToAdd
-
-                ::skip::
-            end
-        end
-
-        if math.abs( remainingWidth ) < 0.0001 or shrinkable:isEmpty() then
-            return
-        end
-
-        -- Shrink
-        while remainingWidth < 0 do
-            local largest = shrinkable[1].width
-            local secondLargest = 0
-            local widthToAdd = remainingWidth
-
-            for _, child in ipairs( shrinkable ) do
-                local width = child.width
-
-                if width > largest then
-                    secondLargest = largest
-                    largest = width
-                end
-
-                if width < largest then
-                    secondLargest = max( secondLargest, width )
-                    widthToAdd = secondLargest - largest
-                end
-            end
-
-            widthToAdd = max( widthToAdd, remainingWidth / #shrinkable )
-
-            for _, child in ipairs( shrinkable ) do
-                local previousWidth = child.width
-                if not( child.width == largest ) then goto skip end
-
-                child.width = child.width + widthToAdd -- is negative so it will shrink
-                remainingWidth = remainingWidth - ( child.width - previousWidth )
-
-                if child.width <= child.minWidth then
-                    child.width = child.minWidth
-                    shrinkable:erase( child )
-                end
-
-                ::skip::
-            end
-        end
-
-    -- Top to Bottom
-    else
-        for _, child in ipairs( growable ) do
-            child.width = maxWidth
-        end
-    end
-end
-
-
---- @package
-function base:wrapText()
-    for _, child in ipairs( self.children ) do
-        if child.text then
-            child:sizeToText()
-        end
-
-        child:wrapText()
-    end
-end
-
-
---- @package
-function base:sizeToText()
-    local font = self.font:getFont( self.textSize )
-    local padding = self.padding
-    local _, lines = font:getWrap( self.text, self.width - padding.left - padding.right )
-    self.minHeight = #lines * font:getHeight() + padding.top + padding.bottom
-    self.height = self.minHeight
-end
-
-
---- @package
-function base:fitShrinkHeights()
-    local padding = self.padding
-
-    self.height = self.height + padding.top + padding.bottom
-
-    local parent = self.parent
-
-    if not( parent ) then
-        if not( self.sizing.height == gui.sizing.shrink ) then return end
-
-        local max = math.max
-
-        for _, child in ipairs( self.children ) do
-            self.height = max( self.height, child.height + padding.top + padding.bottom )
-        end
-
-        return
-    end
-
-    local childSpacing = ( parent:getAmountOfChildren() - 1 ) * parent.childSpacing
-    local parentSizing = parent:getSizing()
-
-    -- Left to Right
-    if parent:getLayoutDirection() == gui.layoutDirection.leftToRight then
-        if not( parentSizing.height == gui.sizing.shrink ) then return end
-
-        parent.height = math.max( parent.height, self.height )
-        parent.minHeight = math.max( parent.minHeight, self.minHeight )
-
-    -- Top to Bottom
-    else
-        if not( parentSizing.height == gui.sizing.shrink ) then return end
-
-        parent.height = parent.height + childSpacing
-        parent.height = parent.height + self.height
-        parent.minHeight = parent.minHeight + self.minHeight
-    end
-end
-
-
---- @package
-function base:expandAndShrinkHeights()
-    local padding = self.padding
-    local remainingHeight = self.height - padding.top - padding.bottom
-    local maxHeight = remainingHeight
-
-    --- @type List<GUI.Element>, List<GUI.Element>
-    local growable, shrinkable = teacher.makeList(), teacher.makeList()
-
-    local min, max = math.min, math.max
-
-    for _, child in ipairs( self.children ) do
-        remainingHeight = remainingHeight - child.height
-
-        if child.sizing.height == gui.sizing.expand then growable:append( child ) end
-        if child.height > child.minHeight then shrinkable:append( child ) end
-    end
-
-    remainingHeight = remainingHeight - ( #self.children - 1 ) * self.childSpacing
-
-    -- Left to Right
-    if self.layoutDirection == gui.layoutDirection.leftToRight then
-        for _, child in ipairs( growable ) do
-            child.height = maxHeight
-        end
-    -- Top to Bottom
-    else
-        while remainingHeight > 0 and not( growable:isEmpty() ) do
-            local smallest = growable[1].height
-            local secondSmallest = math.huge
-            local heightToAdd = remainingHeight
-
-            for _, child in ipairs( growable ) do
-                local height = child.height
-
-                if height < smallest then
-                    secondSmallest = smallest
-                    smallest = height
-                end
-
-                if height > smallest then
-                    secondSmallest = min( secondSmallest, height )
-                    heightToAdd = secondSmallest - smallest
-                end
-            end
-
-            heightToAdd = min( heightToAdd, remainingHeight / #growable )
-
-            for _, child in ipairs( growable ) do
-                if not( child.height == smallest ) then goto skip end
-
-                child.height = child.height + heightToAdd
-                remainingHeight = remainingHeight - heightToAdd
-
-                ::skip::
-            end
-        end
-
-        if math.abs( remainingHeight ) < 0.0001 or shrinkable:isEmpty() then
-            return
-        end
-
-        -- Shrink
-        while remainingHeight < 0 do
-            local largest = shrinkable[1].height
-            local secondLargest = 0
-            local heightToAdd = remainingHeight
-
-            for _, child in ipairs( shrinkable ) do
-                local height = child.height
-
-                if height > largest then
-                    secondLargest = largest
-                    largest = height
-                end
-
-                if height < largest then
-                    secondLargest = max( secondLargest, height )
-                    heightToAdd = secondLargest - largest
-                end
-            end
-
-            heightToAdd = max( heightToAdd, remainingHeight / #shrinkable )
-
-            for _, child in ipairs( shrinkable ) do
-                local previousHeight = child.height
-                if not( child.height == largest ) then goto skip end
-
-                child.height = child.height + heightToAdd -- is negative so it will shrink
-                remainingHeight = remainingHeight - ( child.height - previousHeight )
-
-                if child.height <= child.minHeight then
-                    child.height = child.minHeight
-                    shrinkable:erase( child )
-                end
-
-                ::skip::
-            end
-        end
-    end
-end
-
-
--- Getter and Setter Functions
-
---- @package
---- @param minHeight number
-function base:setMinHeight( minHeight )
-    self.minHeight = minHeight
-end
-
-
---- @package
---- @param minWidth number
-function base:setMinWidth( minWidth )
-    self.minWidth = minWidth
-end
-
-
---- @package
---- @return number
-function base:getMinWidth()
-    return self.minWidth
-end
-
-
---- @package
---- @return number
-function base:getMinHeight()
-    return self.minHeight
-end
-
-
---- @package
---- @param width number
-function base:setWidth( width )
-    self.width = width
-end
-
-
---- @package
---- @param height  number
-function base:setHeight( height )
-    self.height = height
-end
-
-
---- @package
---- @return GUI.LayoutDirection
-function base:getLayoutDirection()
-    return self.layoutDirection
-end
-
-
---- @package
---- @return number
-function base:getAmountOfChildren()
-    return #self.children
-end
-
-
---- @package
---- @return { width : GUI.Sizing|number, height : GUI.Sizing|number }
-function base:getSizing()
-    return self.sizing
-end
-
-
---- @package
-function base:setParent( parent )
-    self.parent = parent
-end
-
-
---- @package
---- @return number
-function base:getWidth()
-    return self.width
-end
-
-
---- @package
---- @return number
-function base:getHeight()
-    return self.height
-end
-
-
-function base:draw()
-    love.graphics.push()
-
-    if self.rounded then
-        artist.drawRectangleRound( "fill", self.x, self.y, self.width, self.height, self.backgroundColor )
-    else
-        artist.drawRectangle( "fill", self.x, self.y, self.width, self.height, self.backgroundColor )
-    end
-
-    local padding = self.padding
-
-    love.graphics.translate( padding.left, padding.top )
-
-    if self.texture then
-        artist.drawTexture( self.texture, 0, 0 )
-    end
-
-    if self.text then
-        local limit = self.width - padding.left - padding.right
-        local font = self.font:getFont( self.textSize )
-        artist.write( self.text, self.x, self.y, limit, self.textAlign, self.color, font )
-    end
-
-    love.graphics.translate( self.x, self.y )
-
-    for _, child in ipairs( self.children ) do
-        child:draw()
-
-        local childSpacing = self.childSpacing
-        if self.layoutDirection == gui.layoutDirection.leftToRight then
-            love.graphics.translate( child:getWidth() + childSpacing, 0 )
-        else
-            love.graphics.translate( 0, child:getHeight() + childSpacing )
-        end
-    end
-
-    love.graphics.pop()
-end
-
-
---- @private
-base.__index = base
 
 --#endregion
 
@@ -1471,6 +647,7 @@ _G.display = {
 }
 
 
+local forcePixelPerfectScaling = false
 local scale, translateX, translateY = 0, 0, 0
 --- @type love.Canvas
 local mainCanvas = nil
@@ -1505,10 +682,27 @@ end
 function display.updateWindowDimensions( width, height )
     display.windowWidth, display.windowHeight = width, height
 
-    scale = math.min( width / display.internalWidth, height / display.internalHeight )
+    scale = min( width / display.internalWidth, height / display.internalHeight )
+
+    if forcePixelPerfectScaling then
+        scale = math.floor( scale )
+    end
 
     translateX = ( width - display.internalWidth * scale ) * 0.5
     translateY = ( height - display.internalHeight * scale ) * 0.5
+
+    local x, y = love.mouse.getPosition()
+
+    mouseX = math.clamp( math.floor( ( x - translateX ) / scale + 0.5 ), 0, display.internalWidth )
+    mouseY = math.clamp( math.floor( ( y - translateY ) / scale + 0.5 ), 0, display.internalHeight )
+
+    if currentScene then currentScene:mouseMoved() end
+end
+
+
+--- @param doPixelPerfectScaling boolean
+function display.setPixelPerfectScaling( doPixelPerfectScaling )
+    forcePixelPerfectScaling = doPixelPerfectScaling
 end
 
 
@@ -1538,6 +732,10 @@ end
 --#region === ECS ===
 
 _G.ecs = {}
+
+
+--- @type Scene?
+local sceneJustCreated = nil
 
 
 -- Filters
@@ -1723,6 +921,8 @@ function ecs.newDrawSystem( filter, isPreDrawSystem )
 
     setmetatable( system, baseDrawSystem )
 
+    if sceneJustCreated then sceneJustCreated:addSystem( system ) end
+
     return system
 end
 
@@ -1746,6 +946,8 @@ function ecs.newUpdateSystem( filter, isPreUpdateSystem )
 
     setmetatable( system, baseUpdateSystem )
 
+    if sceneJustCreated then sceneJustCreated:addSystem( system ) end
+
     return system
 end
 
@@ -1755,10 +957,6 @@ end
 --#region === SCENE MANAGER ===
 
 _G.sceneManager = {}
-
-
---- @type Scene
-local currentScene = nil
 
 
 --- @param newScene Scene
@@ -1826,6 +1024,7 @@ end
 --- @field private allSystems List< System >
 --- @field private entities List< table >
 --- @field private entityTrash List< table >
+--- @field private inputActiveGUIElements List<GUI.Element>
 --- @field enter fun()
 --- @field exit fun()
 --- @field update fun( deltaTime : number )
@@ -1847,6 +1046,7 @@ function baseScene:addEntity( entity )
 end
 
 
+--- @package
 --- @param system System
 function baseScene:addSystem( system )
     for _, entity in ipairs( self.entities ) do
@@ -1870,6 +1070,40 @@ function baseScene:addSystem( system )
     end
 
     self.allSystems:append( system )
+end
+
+
+--- @package
+--- @param element GUI.Element
+function baseScene:addInputActiveGUIElement( element )
+    if self.inputActiveGUIElements:has( element ) then return end
+    self.inputActiveGUIElements:append( element )
+end
+
+
+--- @package
+function baseScene:mouseMoved()
+    for _, element in ipairs( self.inputActiveGUIElements ) do
+        element:mouseMoved( mouseX, mouseY )
+    end
+end
+
+
+--- @package
+--- @param button MouseButton
+function baseScene:mouseClicked( button )
+    for _, element in ipairs( self.inputActiveGUIElements ) do
+        element:mouseButtonClicked( button )
+    end
+end
+
+
+--- @package
+--- @param button MouseButton
+function baseScene:mouseReleased( button )
+    for _, element in ipairs( self.inputActiveGUIElements ) do
+        element:mouseButtonReleased( button )
+    end
 end
 
 
@@ -1933,6 +1167,7 @@ function sceneManager.newScene()
     object.allSystems = teacher.makeList()
     object.entities = teacher.makeList()
     object.entityTrash = teacher.makeList()
+    object.inputActiveGUIElements = teacher.makeList()
 
     object.enter = function () end
     object.exit = function () end
@@ -1940,6 +1175,9 @@ function sceneManager.newScene()
     object.draw = function () end
 
     setmetatable( object, baseScene )
+
+    sceneJustCreated = object
+
     return object
 end
 
@@ -1948,5 +1186,1018 @@ end
 setInternalDimensions( 800, 600 )
 display.updateWindowDimensions( 800, 600 )
 
+
+--#endregion
+
+
+--#region === SPRING ===
+
+
+--- @class Spring
+--- @field private stiffness number
+--- @field private dampening number
+--- @field private mass number
+--- @field private velocity number
+--- @field private target number
+--- @field private value number
+--- @field private initValue number
+--- @field private setter fun( value : number )
+local spring = {}
+
+
+--- @private
+spring.__index = spring
+
+
+--- @param deltaTime number
+function spring:update( deltaTime )
+    local velocity, target, value = self.velocity, self.target, self.value
+
+    -- Early exit
+    if value == target and velocity == 0 then return end
+
+    local stiffness, dampening, mass = self.stiffness, self.dampening, self.mass
+    local delta = value - target
+
+    local springForce = -stiffness * delta
+    local dampeningForce = -dampening * velocity
+    local totalForce = springForce + dampeningForce
+    local acceleration = totalForce / mass
+
+    self.velocity = velocity + acceleration * deltaTime
+    self.value = value + self.velocity * deltaTime
+
+    if self.setter then self.setter( self.value ) end
+end
+
+
+--- @param to number?
+function spring:reset( to )
+    self.value = to or self.initValue
+    self.velocity = 0
+end
+
+
+--- @param impulse number
+function spring:applyImpulse( impulse )
+    self.velocity = impulse
+end
+
+
+--- @param newTarget number
+function spring:setTarget( newTarget )
+    self.target = newTarget
+end
+
+
+--- @return number
+function spring:getValue()
+    return self.value
+end
+
+
+--- @param setter fun( value : number )
+function spring:addSetter( setter )
+    self.setter = setter
+end
+
+
+--- @param stiffness number
+--- @param dampening number
+--- @param mass number
+--- @param initValue number
+--- @return Spring
+function _G.newSpring( stiffness, dampening, mass, initValue )
+    local obj = {
+        stiffness = stiffness,
+        dampening = dampening,
+        mass = mass,
+        target = initValue or 0,
+        velocity = 0,
+        value = initValue or 0,
+        initValue = initValue or 0,
+    }
+
+    setmetatable( obj, spring )
+
+    return obj
+end
+
+--#endregion
+
+
+--#region === STATE MACHINE ===
+
+-- State Machine
+--- @class StateMachine
+--- @field private currentState State
+local stateMachine = {}
+
+
+--- @package
+--- @return boolean
+function stateMachine:earlyExit()
+    if not( self.currentState ) then return true end
+    if not( self.currentState.update ) then return true end
+    return false
+end
+
+
+--- @param deltaTime number
+function stateMachine:update( deltaTime )
+    if self:earlyExit() then return end
+
+    self.currentState.update( deltaTime )
+end
+
+
+function stateMachine:draw()
+    if self:earlyExit() then return end
+
+    self.currentState.draw()
+end
+
+
+--- @param newState State
+function stateMachine:changeState( newState )
+    if self.currentState and self.currentState.exit then
+        self.currentState.exit()
+    end
+
+    if newState.enter then newState.enter() end
+
+    self.currentState = newState
+end
+
+
+function _G.newStateMachine()
+    local obj = { currentState = nil }
+    setmetatable( obj, stateMachine )
+    return obj
+end
+
+
+--- @private
+stateMachine.__index = stateMachine
+
+
+-- State
+--- @class State
+--- @field enter fun()
+--- @field exit fun()
+--- @field update fun( deltaTime : number )
+--- @field draw fun()
+
+
+--- @return State
+function _G.newState()
+    return {}
+end
+
+
+--#endregion
+
+
+--#region === COMMAND ===
+
+-- Command Result
+
+
+--- @class Command
+--- @field perform fun( ... ) : CommandResult
+
+
+--- @enum CommandResult
+_G.commandResult = {
+    SUCCESS = 0,
+    FAILURE = 1
+}
+
+
+
+--- @return Command
+function  _G.newCommand()
+    return {}
+end
+
+
+--#endregion
+
+
+--#region === GUI ===
+
+
+_G.gui = {}
+
+
+--- @alias GUI.Dimension "internalWidth" | "internalHeight"
+--- @alias GUI.SizeMode "expand" | "fit" | number
+--- @alias GUI.LayoutDirection "leftToRight" | "topToBottom"
+--- @alias GUI.HorizontalAlign "left" | "center" | "right"
+--- @alias GUI.VerticalAlign "top" | "center" | "bottom"
+--- @alias GUI.Axis "x" | "y"
+--- @alias GUI.Setup { width : GUI.SizeMode, height : GUI.SizeMode, minWidth : number, minHeight : number, maxWidth : number, maxHeight : number, x : number, y : number, layoutDirection : GUI.LayoutDirection, horizontalAlign : GUI.HorizontalAlign, verticalAlign : GUI.VerticalAlign, childSpacing : number, paddingAll : number, paddingTop : number, paddingBottom : number, paddingLeft : number, paddingRight : number, text : string, textHorizontalAlign : love.AlignMode, textVerticalAlign : GUI.VerticalAlign, font : love.Font, round : boolean, texture : love.Texture, mouseEntered : fun( element : GUI.Element ), mouseExited : fun( element : GUI.Element ), color : Color, backgroundColor : Color, shadowOffsetX : number, shadowOffsetY : number, shadowColor : Color, textShadowOffsetX : number, textShadowOffsetY : number, scale : number, rotation : number, mouseEntered : fun( element : GUI.Element ), mouseExited : fun( element : GUI.Element ), mouseButton : MouseButton, mousePressed : fun( element : GUI.Element ), mouseReleased : fun( element : GUI.Element ) }
+
+local elementStack = teacher.makeList()
+
+
+--- @class GUI.Element
+---
+--- In setup, user interfaces when making element
+--- @field private width GUI.SizeMode
+--- @field private height GUI.SizeMode
+--- @field private minWidth number
+--- @field private minHeight number
+--- @field private maxWidth number
+--- @field private maxHeight number
+--- @field private x number
+--- @field private y number
+--- @field private layoutDirection GUI.LayoutDirection
+--- @field private horizontalAlign GUI.HorizontalAlign
+--- @field private verticalAlign GUI.VerticalAlign
+--- @field private childSpacing number
+--- @field private paddingAll number
+--- @field private paddingTop number
+--- @field private paddingLeft number
+--- @field private paddingBottom number
+--- @field private paddingRight number
+--- @field private text string?
+--- @field private textHorizontalAlign love.AlignMode
+--- @field private textVerticalAlign GUI.VerticalAlign
+--- @field private textShadowOffsetX number
+--- @field private textShadowOffsetY number
+--- @field private font love.Font
+--- @field private round boolean
+--- @field private texture love.Texture?
+--- @field private shadowOffsetX number
+--- @field private shadowOffsetY number
+--- @field private shadowColor Color
+--- @field private rotation number
+--- @field private mouseEntered fun( element : GUI.Element )
+--- @field private mouseExited fun( element : GUI.Element )
+--- @field private mouseButton MouseButton
+--- @field private mousePressed fun( element : GUI.Element )
+--- @field private mouseReleased fun( element : GUI.Element )
+--- @field color Color
+--- @field backgroundColor Color
+--- @field scale number
+--- @field visible boolean
+--- @field inputActive boolean
+---
+--- For internal use
+--- @field private parent GUI.Element?
+--- @field private children List<GUI.Element>
+--- @field private internalWidth number
+--- @field private internalHeight number
+--- @field private horizontalPadding number
+--- @field private verticalPadding number
+--- @field private userSetMinWidth boolean
+--- @field private userSetMinHeight boolean
+--- @field private drawShadow boolean
+--- @field private drawTextShadow boolean
+--- @field private mouseInElement boolean
+---
+local element = {}
+--- @private
+element.__index = element
+
+
+local defaults = {
+    -- User Interface
+    width = "fit", height = "fit",
+    maxWidth = math.huge, maxHeight = math.huge,
+    x = 0, y = 0,
+    layoutDirection = "leftToRight",
+    horizontalAlign = "left", verticalAlign = "top",
+    childSpacing = 0, paddingAll = 0,
+    horizontalPadding = 0, verticalPadding = 0,
+    paddingLeft = 0, paddingRight = 0,
+    paddingTop = 0, paddingBottom = 0,
+    textHorizontalAlign = "left", textVerticalAlign = "top",
+    textShadowOffsetX = 0, textShadowOffsetY = 0,
+    font = love.graphics.newFont( 14 ),
+    round = false,
+    color = artist.mixPaint( 0, 0, 0 ), backgroundColor = artist.mixPaint( 0, 0, 0, 0 ),
+    shadowOffsetX = 0, shadowOffsetY = 0,
+    shadowColor = artist.mixPaint( 0, 0, 0, 128 ),
+    scale = 1, rotation = 0,
+    mouseButton = input.mouseButton.left,
+    visible = true,
+    inputActive = true,
+
+    -- Internal
+    internalHeight = 0, internalWidth = 0,
+    minWidth = 0, minHeight = 0,
+    userSetMinWidth = false, userSetMinHeight = false,
+    drawShadow = false, drawTextShadow = false,
+    mouseInElement = false,
+}
+defaults.__index = defaults
+setmetatable( element, defaults )
+
+
+--- @param slime GUI.Setup
+--- @return GUI.Element
+function gui.newSlime( slime )
+    setmetatable( slime, element )
+    --- @cast slime GUI.Element
+    slime:init()
+
+    if not( elementStack:isEmpty() ) then
+        local parent = elementStack:back()
+        parent:addChild( slime )
+    end
+
+    elementStack:append( slime )
+    return slime
+end
+
+
+--- @package
+function element:init()
+    self.parent = nil
+    self.children = teacher.makeList()
+    self.mouseInBox = false
+
+    local width = self.width
+    if type( width ) == "number" then self.internalWidth = width end
+
+    local height = self.height
+    if type( height ) == "number" then self.internalHeight = height end
+
+    if not( self.minHeight == 0 ) then self.userSetMinHeight = true end
+    if not( self.minWidth == 0 ) then self.userSetMinWidth = true end
+
+    if not( self.paddingAll == 0 ) then
+        local padding = self.paddingAll
+        self.paddingLeft, self.paddingRight = padding, padding
+        self.paddingTop, self.paddingBottom = padding, padding
+    end
+
+    self.horizontalPadding = self.paddingLeft + self.paddingRight
+    self.verticalPadding = self.paddingTop + self.paddingBottom
+
+    if not( self.shadowOffsetX == 0 ) or not( self.shadowOffsetY == 0 ) then
+        self.drawShadow = true
+    end
+
+    if not( self.textShadowOffsetX == 0 ) or not( self.textShadowOffsetY == 0 ) then
+        self.drawTextShadow = true
+    end
+
+    self:setupText()
+
+    local texture = self.texture
+    if texture then
+        if not( self:isFixed( "internalWidth" ) ) and not( self.userSetMinWidth ) then
+            self.minWidth = texture:getWidth() + self.horizontalPadding
+        end
+
+        if not( self:isFixed( "internalHeight" ) ) and not( self.userSetMinHeight ) then
+            self.minHeight = texture:getHeight() + self.verticalPadding
+        end
+    end
+
+    if sceneJustCreated and ( self.mouseEntered or self.mouseExited or self.mousePressed or self.mouseReleased ) then
+        sceneJustCreated:addInputActiveGUIElement( self )
+    end
+end
+
+
+-- Setup Functions
+
+--- @private
+function element:setupText()
+    local text = self.text
+
+    if not( text ) then return end
+
+    local font = self.font
+
+    if not( self:isFixed( "internalWidth" ) ) then self:setupTextWidth( text, font ) end
+    if not( self:isFixed( "internalHeight" ) ) then self:setupTextHeight( font ) end
+end
+
+
+--- @private
+--- @param text string
+--- @param font love.Font
+function element:setupTextWidth( text, font )
+    local widest = 0
+    local padding = self.horizontalPadding
+
+    for word in string.gmatch( text, "%S+" ) do
+        widest = max( widest, font:getWidth( word ) )
+    end
+
+    if not( self.userSetMinWidth ) then
+        self.minWidth = widest + padding
+        self.internalWidth = self.minWidth
+    end
+end
+
+
+--- @private
+--- @param font love.Font
+function element:setupTextHeight( font )
+    local padding = self.verticalPadding
+    if not( self.userSetMinHeight ) then self.minHeight = font:getHeight() + padding end
+end
+
+
+-- Child and Parents
+
+--- @package
+--- @param child  GUI.Element
+function element:addChild( child )
+    child.parent = self
+    self.children:append( child )
+end
+
+
+function gui.gatherSlimelets()
+    assert( not( elementStack:isEmpty() ) )
+
+    --- @type GUI.Element
+    local next = elementStack:popBack()
+    next:close()
+end
+
+
+--- @package
+function element:close()
+    local horizontalAlign = self.horizontalAlign
+    local verticalAlign = self.verticalAlign
+
+    self:fit( "internalWidth" )
+    self:tryExpandAndShrink( "internalWidth" )
+
+    self:wrapText()
+
+    self:fit( "internalHeight" )
+    self:tryExpandAndShrink( "internalHeight" )
+
+    if self.parent then return end
+
+    self:setPosition( "x", "internalWidth", horizontalAlign )
+    self:setPosition( "y", "internalHeight", verticalAlign )
+end
+
+
+do
+
+local elementQueue = teacher.makeQueue()
+
+--- @private
+--- @param dimension GUI.Dimension
+function element:tryExpandAndShrink( dimension )
+    if self.parent then return end
+
+    elementQueue:clear()
+    elementQueue:enqueue( self )
+
+    while not( elementQueue:isEmpty() ) do
+        --- @type GUI.Element
+        local current = elementQueue:next()
+
+        for _, child in ipairs( current.children ) do
+            elementQueue:enqueue( child )
+        end
+
+        current:expandAndShrink( dimension )
+    end
+end
+end
+
+
+--- @private
+--- @param dimension GUI.Dimension
+--- @return boolean
+function element:isFixed( dimension )
+    dimension = string.lower( dimension:gsub( "internal", "" ) )
+    return type( self[ dimension ] ) == "number"
+end
+
+
+--- @private
+--- @param dimension GUI.Dimension
+--- @return number
+function element:getPaddingByDimension( dimension )
+    if dimension == "internalWidth" then
+        return self.horizontalPadding
+    else
+        return self.verticalPadding
+    end
+end
+
+
+--- @private
+--- @param dimension GUI.Dimension
+--- @return boolean
+function element:getAlongAxis( dimension )
+    if dimension == "internalWidth" and self.layoutDirection == "leftToRight" then
+        return true
+    elseif dimension == "internalHeight" and self.layoutDirection == "topToBottom" then
+        return true
+    end
+
+    return false
+end
+
+
+--- @private
+--- @param dimension GUI.Dimension
+--- @return boolean
+function element:isExpand( dimension )
+    if dimension == "internalWidth" and self.width == "expand" then return true end
+    if dimension == "internalHeight" and self.height == "expand" then return true end
+    return false
+end
+
+
+--- @param dimension GUI.Dimension
+--- @return "minWidth" | "minHeight"
+local function makeDimensionMin( dimension )
+    dimension = dimension:gsub( "internal", "" )
+    return "min"..dimension
+end
+
+
+--- @param dimension GUI.Dimension
+--- @return "maxWidth" | "maxHeight"
+local function makeDimensionMax( dimension )
+    dimension = dimension:gsub( "internal", "" )
+    return "max"..dimension
+end
+
+
+
+--- @private
+--- @param dimension GUI.Dimension
+function element:fit( dimension )
+    local padding = self:getPaddingByDimension( dimension )
+    local minDimension, maxDimension = makeDimensionMin( dimension ), makeDimensionMax( dimension )
+    self[ dimension ] = self[ dimension ] + padding
+
+    if not( self:isExpand( dimension ) ) then self[ dimension ] = max( self[ dimension ], self[ minDimension ] ) end
+
+    local childSpacing = ( #self.children  - 1 ) * self.childSpacing
+    if self:getAlongAxis( dimension ) then self[ dimension ] = self[ dimension ] + childSpacing end
+
+    local parent = self.parent
+
+    if not( parent ) then
+        if self:isFixed( dimension ) then return end
+
+        for _, child in ipairs( self.children ) do
+            self[ dimension ] = max( self[ dimension ], child[ dimension ] + padding )
+        end
+
+        return
+    end
+
+    if parent:isFixed( dimension ) then return end
+
+    local alongAxis = parent:getAlongAxis( dimension )
+
+    if alongAxis then
+        parent[ dimension ] = min( parent[ dimension ] + self[ dimension ], parent[ maxDimension ] )
+        parent[ minDimension ] = min( parent[ minDimension ] + self[ minDimension ], parent[ maxDimension ] )
+    else
+        parent[ dimension ] = min( max( parent[ dimension ], self[ dimension ] ), parent[ maxDimension ] )
+        parent[ minDimension ] = min( max( parent[ minDimension ], self[ minDimension ] ), parent[ maxDimension ] )
+    end
+end
+
+
+--- @private
+--- @param dimension GUI.Dimension
+--- @param remainingSpace number
+--- @param children List<GUI.Element>
+--- @param grow boolean
+--- @return number, List<GUI.Element>
+local function growOrShrink( dimension, remainingSpace, children, grow )
+    local extremum = max
+    local minDimension = makeDimensionMin( dimension )
+    local maxDimension = makeDimensionMax( dimension )
+    local extreme = children[1][ dimension ]
+    local secondExtreme = 0
+    local spaceToAdd = remainingSpace
+
+    if grow then secondExtreme = math.huge end
+    if grow then extremum = min end
+
+    for _, child in ipairs( children ) do
+        local size = child[ dimension ]
+
+        if ( grow and size < extreme ) or ( not( grow ) and size > extreme ) then
+            secondExtreme = extreme
+            extreme = size
+        end
+
+        if ( grow and size > extreme ) or ( not( grow ) and size < extreme ) then
+            secondExtreme = extremum( secondExtreme, size )
+            spaceToAdd = secondExtreme - extreme
+        end
+    end
+
+    spaceToAdd = extremum( spaceToAdd, remainingSpace / #children )
+
+    for _, child in ipairs( children ) do
+        if not( child[ dimension ] == extreme ) then goto skip end
+
+        local previousSize = child[ dimension ]
+        child[ dimension ] = child[ dimension ] + spaceToAdd
+
+        if grow then
+            remainingSpace = remainingSpace - spaceToAdd
+
+            if child[ dimension ] >= child[ maxDimension ] then
+                child[ dimension ] = child[ maxDimension ]
+                children:erase( child )
+            end
+        else
+            remainingSpace = remainingSpace - ( child[ dimension ] - previousSize )
+
+            if child[ dimension ] <= child[ minDimension ] then
+                child[ dimension ] = child[ minDimension ]
+                children:erase( child )
+            end
+        end
+
+        ::skip::
+    end
+
+    return remainingSpace, children
+end
+
+
+do -- Keep growable and shrinkable out of scope for the rest of the libray
+
+-- These are here so that hundreds of new lists dont have to be created
+--- @type List<GUI.Element>, List<GUI.Element>
+local growable, shrinkable = teacher.makeList(), teacher.makeList()
+
+
+--- @private
+--- @param dimension GUI.Dimension
+function element:expandAndShrink( dimension )
+    local padding = self:getPaddingByDimension( dimension )
+    local remainingSpace = self[ dimension ] - padding
+    local maxSpace = remainingSpace
+    local children = self.children
+    local minDimension = makeDimensionMin( dimension )
+    local alongAxis = self:getAlongAxis( dimension )
+
+    if not( alongAxis ) then
+        for _, child in ipairs( children ) do
+            if child:isExpand( dimension ) or child[ dimension ] > maxSpace then
+                child[ dimension ] = maxSpace
+            end
+        end
+
+        return
+    end
+
+    growable:clear()
+    shrinkable:clear()
+
+    for _, child in ipairs( children ) do
+        remainingSpace = remainingSpace - child[ dimension ]
+
+        if child:isExpand( dimension ) then growable:append( child ) end
+        if child[ dimension ] > child[ minDimension ] and not( child:isFixed( dimension ) ) then shrinkable:append( child ) end
+    end
+
+    remainingSpace = remainingSpace - ( #children - 1 ) * self.childSpacing
+
+    while remainingSpace > 0 and not( growable:isEmpty() ) do
+        remainingSpace = growOrShrink( dimension, remainingSpace, growable, true )
+
+        if math.abs( remainingSpace ) < 0.0001 then
+            return
+        end
+    end
+
+    if shrinkable:isEmpty() then return end
+
+    while remainingSpace < 0 do
+        remainingSpace, shrinkable = growOrShrink( dimension, remainingSpace, shrinkable, false )
+    end
+end
+
+end
+
+
+do
+local elementQueue = teacher.makeQueue()
+
+--- @package
+function element:wrapText()
+    if self.parent then return end
+
+    elementQueue:clear()
+    elementQueue:enqueue( self )
+
+    while not( elementQueue:isEmpty() ) do
+        --- @type GUI.Element
+        local current = elementQueue:next()
+
+        for _, child in ipairs( current.children ) do
+            elementQueue:enqueue( child )
+        end
+
+        current:fitToText()
+    end
+end
+end
+
+
+--- @package
+function element:fitToText()
+    if not( self.text ) then return end
+    if self:isFixed( "internalHeight" ) then return end
+
+    local font = self.font
+    local _, lines = font:getWrap( self.text, self.internalWidth - self.horizontalPadding )
+    if not( self.userSetMinHeight ) then
+        self.minHeight = #lines * font:getHeight() + self.verticalPadding
+        self.internalHeight = self.minHeight
+    end
+end
+
+
+--- @private
+--- @param axis GUI.Axis
+--- @return number
+function element:getTopLeftPadding( axis )
+    if axis == "x" then
+        return self.paddingLeft or self.paddingAll
+    else
+        return self.paddingTop or self.paddingAll
+    end
+end
+
+
+--- @private
+--- @param axis GUI.Axis
+--- @return number
+function element:getBottomRightPadding( axis )
+    if axis == "x" then
+        return self.paddingRight
+    else
+        return self.paddingBottom
+    end
+end
+
+
+--- @param dimension GUI.Dimension
+--- @return "horizontalAlign" | "verticalAlign"
+local function getAlignFromDimension( dimension )
+    if dimension == "internalWidth" then
+        return "horizontalAlign"
+    else
+        return "verticalAlign"
+    end
+end
+
+
+--- @param alignment GUI.HorizontalAlign | GUI.VerticalAlign
+--- @return "none" | "center" | "push"
+local function getJustify( alignment )
+    if alignment == "left" or alignment == "top" then
+        return "none"
+    elseif alignment == "center" then
+        return "center"
+    else
+        return "push"
+    end
+end
+
+
+--- @private
+--- @param axis GUI.Axis
+--- @param dimension GUI.Dimension
+--- @param alignment GUI.HorizontalAlign | GUI.VerticalAlign
+function element:setPosition( axis, dimension, alignment )
+    local children = self.children
+    local padding = self:getTopLeftPadding( axis )
+    local offset = 0
+    local childSpacing = self.childSpacing
+    local justify = getJustify( alignment )
+    local justifyOffset = 0
+    local alongAxis = self:getAlongAxis( dimension )
+
+    if alongAxis and ( justify == "center" or justify == "push" ) then
+        justifyOffset = self[ dimension ] - padding - self:getBottomRightPadding( axis )
+
+        for _, child in ipairs( children ) do
+            justifyOffset = justifyOffset - child[ dimension ]
+        end
+
+        justifyOffset = justifyOffset - ( #children - 1 ) * childSpacing
+
+        if justify == "center" then justifyOffset = justifyOffset * 0.5 end
+    end
+
+    for _, child in ipairs( children ) do
+        child[ axis ] = self[ axis ] + padding
+
+        if alongAxis then
+            child[ axis ] = child[ axis ] + offset + justifyOffset
+            offset = offset + child[ dimension ]
+
+        elseif justify == "center" or justify == "push" then
+            local oppositePadding = self:getBottomRightPadding( axis )
+            local remainingSpace = ( self[ dimension ] - padding - oppositePadding - child[ dimension ] )
+
+            if justify == "center" then remainingSpace = remainingSpace * 0.5 end
+
+            child[ axis ] = child[ axis ] + remainingSpace
+        end
+
+        offset = offset + childSpacing
+
+        child:setPosition( axis, dimension, child[ getAlignFromDimension( dimension ) ] )
+    end
+end
+
+
+-- Input
+
+--- @package
+--- @param x number
+--- @param y number
+function element:mouseMoved( x, y )
+    if not( self.inputActive ) then return end
+
+    local inX = x > self.x and x < self.x + self.internalWidth
+    local inY = y > self.y and y < self.y + self.internalHeight
+
+    if self.mouseInElement and ( not( inX ) or not( inY ) ) then
+        if self.mouseExited then self:mouseExited() end
+        self.mouseInElement = false
+
+    elseif not( self.mouseInElement ) and inX and inY then
+        if self.mouseEntered then self:mouseEntered() end
+        self.mouseInElement = true
+    end
+end
+
+
+--- @package
+--- @param button MouseButton
+function element:mouseButtonClicked( button )
+    if not( self.inputActive ) then return end
+    if not( self.mouseInElement ) then return end
+    if not( self.mouseButton == button ) then return end
+    if not( self.mousePressed ) then return end
+
+    self:mousePressed()
+end
+
+
+--- @package
+--- @param button MouseButton
+function element:mouseButtonReleased( button )
+    if not( self.inputActive ) then return end
+    if not( self.mouseInElement ) then return end
+    if not( self.mouseButton == button ) then return end
+    if not( self.mouseReleased ) then return end
+
+    self:mouseReleased()
+end
+
+
+-- Draw
+
+function element:draw()
+    love.graphics.push()
+
+    local round = self.round
+    local x, y = self.x, self.y
+    local width, height = self.internalWidth, self.internalHeight
+    local texture = self.texture
+
+    if not( self.visible ) then goto skip end
+
+    if not( self.scale == 1 ) then
+        artist.scale( self.scale, x + width * 0.5, y + height * 0.5 )
+    end
+
+    if self.drawShadow then
+        if round then
+            artist.paintRectangleRound( "fill", x + self.shadowOffsetX, y + self.shadowOffsetY, width, height, self.shadowColor )
+        else
+            artist.paintRectangle( "fill", x + self.shadowOffsetX, y + self.shadowOffsetY, width, height, self.shadowColor )
+        end
+    end
+
+    if round then
+        artist.paintRectangleRound( "fill", x, y, width, height, self.backgroundColor )
+    else
+        artist.paintRectangle( "fill", x, y, width, height, self.backgroundColor )
+    end
+
+    if texture then
+        artist.paintTexture( texture, x + self.paddingLeft, y + self.paddingTop )
+    end
+
+    if self.text then
+        local limit = self.internalWidth - self.horizontalPadding
+
+        local verticalAlign = self.textVerticalAlign
+        local font = self.font
+        local verticalPush = self.paddingTop
+
+        if verticalAlign == "center" or verticalAlign == "bottom" then
+            local _, lines = font:getWrap( self.text, limit )
+            local textHeight = #lines * font:getHeight()
+
+            local remainingSpace = self.internalHeight - self.horizontalPadding - textHeight
+
+            if verticalAlign == "center" then remainingSpace = remainingSpace * 0.5 end
+
+            verticalPush = verticalPush + remainingSpace
+        end
+
+        if self.drawTextShadow then
+            local textX = x + self.paddingLeft + self.textShadowOffsetX
+            local textY = y + self.textShadowOffsetY + verticalPush
+
+            artist.write( self.text, textX, textY, limit, self.textHorizontalAlign, self.shadowColor, font )
+        end
+
+        artist.write( self.text, x + self.paddingLeft, y + verticalPush, limit, self.textHorizontalAlign, self.color, font )
+    end
+
+    ::skip::
+
+    for _, child in ipairs( self.children ) do
+        child:draw()
+    end
+
+    love.graphics.pop()
+end
+
+--#endregion
+
+
+--#region === CLOSURE ===
+
+--- @param key love.KeyConstant
+local function keyPressed( key )
+    keysDown:append( key )
+    keysJustPressed:append( key )
+end
+
+
+local function keyReleased( key )
+    keysDown:erase( key )
+end
+
+
+local function resetKeysJustPressed()
+    keysJustPressed:clear()
+end
+
+
+local function mouseButtonPressed( button )
+    mouseButtonsDown:append( button )
+    mouseButtonsJustPressed:append( button )
+
+    if currentScene then currentScene:mouseClicked( button ) end
+end
+
+
+local function mouseButtonReleased( button )
+    mouseButtonsDown:erase( button )
+
+    if currentScene then currentScene:mouseReleased( button ) end
+end
+
+
+local function resetMouseButtonsPressed()
+    mouseButtonsJustPressed:clear()
+end
+
+
+local function mouseMoved( x, y )
+    mouseX = math.clamp( math.floor( ( x - translateX ) / scale + 0.5 ), 0, display.internalWidth )
+    mouseY = math.clamp( math.floor( ( y - translateY ) / scale + 0.5 ), 0, display.internalHeight )
+
+    if currentScene then currentScene:mouseMoved() end
+end
+
+
+return {
+    keyPressed = keyPressed,
+    keyReleased = keyReleased,
+    resetKeysJustPressed = resetKeysJustPressed,
+    mouseMoved = mouseMoved,
+    mouseButtonPressed = mouseButtonPressed,
+    mouseButtonReleased = mouseButtonReleased,
+    resetMouseButtonsPressed = resetMouseButtonsPressed
+}
 
 --#endregion
