@@ -3,7 +3,6 @@ local currentScene = nil
 local min, max = math.min, math.max
 
 
-
 --#region === TEACHER ===
 
 _G.teacher = {}
@@ -498,6 +497,48 @@ local defualtFont = writer.makeFont( 12 )
 --#endregion
 
 
+--#region === DJ ===
+
+_G.dj = {}
+
+
+--- @type table< string, love.Source >
+local sounds = {}
+
+--- @type table< string, love.Source >
+local music = {}
+
+--- @param path string
+--- @return love.Source
+function dj.getSample( path )
+    local source = sounds[ path ]
+
+    if not( source ) then
+        source = love.audio.newSource( path, "static" )
+        sounds[ path ] = source
+        return source:clone()
+    else
+        return source:clone()
+    end
+end
+
+--- @param path string
+--- @return love.Source
+function dj.getTrack( path )
+    local track = music[ path ]
+
+    if not( track ) then
+        track = love.audio.newSource( path, "stream" )
+        music[ path ] = track
+        return track:clone()
+    else
+        return track:clone()
+    end
+end
+
+--#endregion
+
+
 --#region === MATH ===
 
 --- @param totalTime number
@@ -734,10 +775,6 @@ end
 _G.ecs = {}
 
 
---- @type Scene?
-local sceneJustCreated = nil
-
-
 -- Filters
 
 local function entityHasKey( entity, key )
@@ -921,8 +958,6 @@ function ecs.newDrawSystem( filter, isPreDrawSystem )
 
     setmetatable( system, baseDrawSystem )
 
-    if sceneJustCreated then sceneJustCreated:addSystem( system ) end
-
     return system
 end
 
@@ -945,8 +980,6 @@ function ecs.newUpdateSystem( filter, isPreUpdateSystem )
     system.update = function() end
 
     setmetatable( system, baseUpdateSystem )
-
-    if sceneJustCreated then sceneJustCreated:addSystem( system ) end
 
     return system
 end
@@ -1010,6 +1043,10 @@ function sceneManager.draw()
         end
     end
 
+    for _, element in ipairs( currentScene:getDrawableGUIElements() ) do
+        element:draw()
+    end
+
     drawMainCanvas()
 end
 
@@ -1025,6 +1062,7 @@ end
 --- @field private entities List< table >
 --- @field private entityTrash List< table >
 --- @field private inputActiveGUIElements List<GUI.Element>
+--- @field private drawGUIElements List<GUI.Element>
 --- @field enter fun()
 --- @field exit fun()
 --- @field update fun( deltaTime : number )
@@ -1046,7 +1084,6 @@ function baseScene:addEntity( entity )
 end
 
 
---- @package
 --- @param system System
 function baseScene:addSystem( system )
     for _, entity in ipairs( self.entities ) do
@@ -1073,12 +1110,26 @@ function baseScene:addSystem( system )
 end
 
 
---- @package
 --- @param element GUI.Element
-function baseScene:addInputActiveGUIElement( element )
-    if self.inputActiveGUIElements:has( element ) then return end
-    self.inputActiveGUIElements:append( element )
+function baseScene:addGUITreeToScene( element )
+    element:addToScene( self )
 end
+
+
+--- @package
+--- @return List<GUI.Element>
+function baseScene:getInputActiveGUIElements()
+    return self.inputActiveGUIElements
+end
+
+
+
+--- @package
+--- @return List<GUI.Element>
+function baseScene:getDrawableGUIElements()
+    return self.drawGUIElements
+end
+
 
 
 --- @package
@@ -1168,6 +1219,7 @@ function sceneManager.newScene()
     object.entities = teacher.makeList()
     object.entityTrash = teacher.makeList()
     object.inputActiveGUIElements = teacher.makeList()
+    object.drawGUIElements = teacher.makeList()
 
     object.enter = function () end
     object.exit = function () end
@@ -1175,8 +1227,6 @@ function sceneManager.newScene()
     object.draw = function () end
 
     setmetatable( object, baseScene )
-
-    sceneJustCreated = object
 
     return object
 end
@@ -1483,7 +1533,7 @@ local defaults = {
     scale = 1, rotation = 0,
     mouseButton = input.mouseButton.left,
     visible = true,
-    inputActive = true,
+    inputActive = false,
 
     -- Internal
     internalHeight = 0, internalWidth = 0,
@@ -1558,8 +1608,8 @@ function element:init()
         end
     end
 
-    if sceneJustCreated and ( self.mouseEntered or self.mouseExited or self.mousePressed or self.mouseReleased ) then
-        sceneJustCreated:addInputActiveGUIElement( self )
+    if self.mouseEntered or self.mouseExited or self.mousePressed or self.mouseReleased then
+        self.inputActive = true
     end
 end
 
@@ -2140,20 +2190,84 @@ function element:draw()
     love.graphics.pop()
 end
 
+
+do
+
+local elementQueue = teacher.makeQueue()
+
+--- @package
+--- @param scene Scene
+function element:addToScene( scene )
+    if self.parent then
+        self.parent:addToScene( scene )
+        return
+    end
+
+    local drawList = scene:getDrawableGUIElements()
+    local inputList = scene:getInputActiveGUIElements()
+
+    drawList:append( self )
+
+    elementQueue:clear()
+    elementQueue:enqueue( self )
+
+    while not( elementQueue:isEmpty() ) do
+        --- @type GUI.Element
+        local current = elementQueue:next()
+
+        if current.inputActive then
+            inputList:append( current )
+        end
+
+        for _, child in ipairs( current.children ) do
+            elementQueue:enqueue( child )
+        end
+    end
+end
+end
+
+
 --#endregion
 
 
---#region === CLOSURE ===
+--#region === LOVE.RUN ===
+
+
+local callbacks = {}
+
 
 --- @param key love.KeyConstant
-local function keyPressed( key )
+function callbacks.keypressed( key )
     keysDown:append( key )
     keysJustPressed:append( key )
 end
 
 
-local function keyReleased( key )
+function callbacks.keyreleased( key )
     keysDown:erase( key )
+end
+
+
+function callbacks.mousepressed( _, _, button )
+    mouseButtonsDown:append( button )
+    mouseButtonsJustPressed:append( button )
+
+    if currentScene then currentScene:mouseClicked( button ) end
+end
+
+
+function callbacks.mousereleased( _, _ ,button )
+    mouseButtonsDown:erase( button )
+
+    if currentScene then currentScene:mouseReleased( button ) end
+end
+
+
+function callbacks.mousemoved( x, y )
+    mouseX = math.clamp( math.floor( ( x - translateX ) / scale + 0.5 ), 0, display.internalWidth )
+    mouseY = math.clamp( math.floor( ( y - translateY ) / scale + 0.5 ), 0, display.internalHeight )
+
+    if currentScene then currentScene:mouseMoved() end
 end
 
 
@@ -2162,42 +2276,53 @@ local function resetKeysJustPressed()
 end
 
 
-local function mouseButtonPressed( button )
-    mouseButtonsDown:append( button )
-    mouseButtonsJustPressed:append( button )
-
-    if currentScene then currentScene:mouseClicked( button ) end
-end
-
-
-local function mouseButtonReleased( button )
-    mouseButtonsDown:erase( button )
-
-    if currentScene then currentScene:mouseReleased( button ) end
-end
-
-
 local function resetMouseButtonsPressed()
     mouseButtonsJustPressed:clear()
 end
 
+function love.run()
+    love.load()
 
-local function mouseMoved( x, y )
-    mouseX = math.clamp( math.floor( ( x - translateX ) / scale + 0.5 ), 0, display.internalWidth )
-    mouseY = math.clamp( math.floor( ( y - translateY ) / scale + 0.5 ), 0, display.internalHeight )
+    love.timer.step()
 
-    if currentScene then currentScene:mouseMoved() end
+    local deltaTime = 0
+
+    return function ()
+        love.event.pump()
+
+        -- Events
+        for name, a, b, c, d, e, f in love.event.poll() do
+            local callback = callbacks[ name ]
+            if callback then
+                callback( a, b, c, d, e, f )
+            elseif name == "quit" then
+                ---@diagnostic disable-next-line: undefined-field
+                if not love.quit or not love.quit() then
+                    return a or 0
+                end
+            else
+                ---@diagnostic disable-next-line: undefined-field
+                love.handlers[ name ]( a,b,c,d,e,f )
+            end
+        end
+
+        deltaTime = love.timer.step()
+
+        sceneManager.update( deltaTime )
+
+        resetKeysJustPressed()
+        resetMouseButtonsPressed()
+
+        love.graphics.origin()
+        love.graphics.clear( love.graphics.getBackgroundColor() )
+
+        sceneManager.draw()
+
+        love.graphics.present()
+
+        love.timer.sleep( 0.001 )
+    end
 end
 
-
-return {
-    keyPressed = keyPressed,
-    keyReleased = keyReleased,
-    resetKeysJustPressed = resetKeysJustPressed,
-    mouseMoved = mouseMoved,
-    mouseButtonPressed = mouseButtonPressed,
-    mouseButtonReleased = mouseButtonReleased,
-    resetMouseButtonsPressed = resetMouseButtonsPressed
-}
 
 --#endregion
