@@ -1,4 +1,10 @@
--- EXAMPLE
+if arg[2] == "debug" then
+    require("lldebugger").start()
+end
+
+
+require "pippo's helper plus"
+
 
 function love.load()
     display.setInternalResolution( 900, 900 )
@@ -31,6 +37,7 @@ function love.load()
     updateSystem.update = function ( entity, deltaTime )
         entity:update( deltaTime )
     end
+    scene:addSystem( updateSystem )
 
     local spring = newSpring( 10, 0.1, 0.01, 1 )
 
@@ -102,68 +109,21 @@ function love.load()
 
     gui.gatherSlimelets()
 
+    scene:addGUITreeToScene( base )
+
     spring:addSetter( function ( value ) purpleBox.scale = value end )
     scene:addEntity( spring )
-
-    scene.draw = function ()
-        base:draw()
-    end
 
     sceneManager.changeScene( scene )
 end
 
 
-function love.run()
-    local pip = require "pippo's helper plus"
+local love_errorhandler = love.errorhandler
 
-    love.load()
-
-    love.timer.step()
-
-    local deltaTime = 0
-
-    return function ()
-        love.event.pump()
-
-        -- Events
-        for name, a, b, c, d, e, f in love.event.poll() do
-            if name == "quit" then
-                ---@diagnostic disable-next-line: undefined-field
-                if not love.quit or not love.quit() then
-                    return a or 0
-                end
-            elseif name == "resize" then
-                display.updateWindowDimensions( a, b )
-            elseif name == "keypressed" then
-                pip.keyPressed( a )
-            elseif name == "keyreleased" then
-                pip.keyReleased( a )
-            elseif name == "mousemoved" then
-                pip.mouseMoved( a, b )
-            elseif name == "mousepressed" then
-                pip.mouseButtonPressed( c )
-            elseif name == "mousereleased" then
-                pip.mouseButtonReleased( c )
-            else
-                ---@diagnostic disable-next-line: undefined-field
-                love.handlers[ name ]( a,b,c,d,e,f )
-            end
-        end
-
-        deltaTime = love.timer.step()
-
-        sceneManager.update( deltaTime )
-
-        pip.resetKeysJustPressed()
-        pip.resetMouseButtonsPressed()
-
-        love.graphics.origin()
-        love.graphics.clear( love.graphics.getBackgroundColor() )
-
-        sceneManager.draw()
-
-        love.graphics.present()
-
-        love.timer.sleep( 0.001 )
+function love.errorhandler(msg)
+    if lldebugger then
+        error(msg, 2)
+    else
+        return love_errorhandler(msg)
     end
 end
