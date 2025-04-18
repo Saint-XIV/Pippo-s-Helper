@@ -1,8 +1,3 @@
-if arg[2] == "debug" then
-    require("lldebugger").start()
-end
-
-
 require "pippo's helper plus"
 
 
@@ -15,9 +10,6 @@ function love.load()
     local white = artist.mixPaint( 255, 255, 255 )
     local purple = artist.mixPaint( 255, 0, 255 )
     local gray = artist.mixPaint( 150, 150, 150 )
-
-    local font = love.graphics.newFont( "font.ttf", 16, "mono" )
-    local sprite = love.graphics.newImage( "sprite.png" )
 
     --- @param color Color
     --- @return Color
@@ -38,21 +30,21 @@ function love.load()
         entity:update( deltaTime )
     end
     scene:addSystem( updateSystem )
-
-    local spring = newSpring( 10, 0.1, 0.01, 1 )
+    local spring = engineer.newSpring( 10, 0.1, 0.01, 1 )
+    scene:addEntity( spring )
 
     local base = gui.newSlime{
     backgroundColor = red,
     width = 500, height = 500,
     paddingAll = 10, childSpacing = 10,
-    x = 10, y = 10
+    x = 10, y = 10,
     }
 
         gui.newSlime{
             childSpacing = 10, paddingAll = 10,
             layoutDirection = "topToBottom",
             height = "expand",
-            backgroundColor = blue
+            backgroundColor = blue,
         }
 
             for i = 1, 3 do
@@ -63,13 +55,13 @@ function love.load()
                     backgroundColor = color,
                     width = 200, height = "expand",
                     text = "we getting gui in here",
-                    font = font,
                     textHorizontalAlign = "center",
                     textVerticalAlign = "center",
                     paddingAll = 10,
                     shadowOffsetX = 5, shadowOffsetY = 5,
                     textShadowOffsetX = 1, textShadowOffsetY = 1,
-                    mousePressed = flipElementColor
+                    mousePressed = flipElementColor,
+                    inputActive = true
                 } gui.gatherSlimelets()
             end
 
@@ -91,39 +83,36 @@ function love.load()
                 textVerticalAlign = "bottom",
                 paddingAll = 10,
                 mouseEntered = function ( element ) spring:setTarget( 1.05 ) end,
-                mouseExited = function ( element ) spring:setTarget( 1 ) end
+                mouseExited = function ( element ) spring:setTarget( 1 ) end,
+                inputActive = true
             } gui.gatherSlimelets()
+            spring:addSetter( function ( value ) purpleBox.scale = value end )
 
             gui.newSlime{
                 height = "expand"
             } gui.gatherSlimelets()
 
             gui.newSlime{
-                texture = sprite,
                 backgroundColor = purple,
+                width = 100, height = 25,
+                text = "click here!",
+                textHorizontalAlign = "center",
+                textVerticalAlign = "center",
                 paddingAll = 10,
-                mousePressed = function ( element ) element.visible = not( element.visible ) end
+                mousePressed = function ( element ) element.visible = not( element.visible ) end,
+                inputActive = true,
             } gui.gatherSlimelets()
 
         gui.gatherSlimelets()
 
     gui.gatherSlimelets()
 
-    scene:addGUITreeToScene( base )
+    local guiCanvas = artist.makeScreenCanvas()
+    scene:addGUITree( base, guiCanvas )
 
-    spring:addSetter( function ( value ) purpleBox.scale = value end )
-    scene:addEntity( spring )
+    scene.draw = function ()
+        artist.paintCanvas( guiCanvas )
+    end
 
     sceneManager.changeScene( scene )
-end
-
-
-local love_errorhandler = love.errorhandler
-
-function love.errorhandler(msg)
-    if lldebugger then
-        error(msg, 2)
-    else
-        return love_errorhandler(msg)
-    end
 end
