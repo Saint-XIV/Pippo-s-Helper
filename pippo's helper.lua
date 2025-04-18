@@ -5,6 +5,7 @@ local min, max = math.min, math.max
 
 --#region === TEACHER ===
 
+--- @class Pip.Teacher
 _G.teacher = {}
 
 
@@ -109,6 +110,24 @@ function list:clear()
     for index = #self, 1, -1 do
         table.remove( self, index )
     end
+end
+
+
+--- @return any
+function list:pickRandom()
+    return self[ love.math.random( #self ) ]
+end
+
+
+--- @return List
+function list:duplicate()
+    local newList = teacher.makeList()
+
+    for _, item in ipairs( self ) do
+        newList:append( item )
+    end
+
+    return newList
 end
 
 
@@ -232,11 +251,19 @@ function queue:isEmpty()
 end
 
 
+do
+    local next = next
+    function table.isEmpty( table )
+        return next( table ) == nil
+    end
+end
+
 --#endregion
 
 
 --#region === ARTIST ===
 
+--- @class Pip.Artist
 _G.artist = {}
 
 
@@ -421,11 +448,29 @@ function artist.write( text, x, y, limit, align, color, font )
     love.graphics.printf( text, font, x, y, limit, align )
 end
 
+
+--- @return love.Canvas
+function artist.makeScreenCanvas()
+    local canvas = love.graphics.newCanvas( display.internalWidth, display.internalHeight )
+    canvas:setFilter( "nearest", "nearest" )
+    return canvas
+end
+
+
+--- @param canvas love.Canvas
+--- @param x integer?
+--- @param y integer?
+function artist.paintCanvas( canvas, x, y )
+    setColor()
+    love.graphics.draw( canvas, x or 0 , y or 0 )
+end
+
 --#endregion
 
 
 --#region === WRITER ===
 
+--- @class Pip.Writer
 _G.writer = {}
 
 
@@ -499,6 +544,7 @@ local defualtFont = writer.makeFont( 12 )
 
 --#region === DJ ===
 
+--- @class Pip.DJ
 _G.dj = {}
 
 
@@ -536,6 +582,177 @@ function dj.getTrack( path )
     end
 end
 
+--#endregion
+
+
+--#region === ENGINEER ===
+
+--- @class Pip.Engineer
+_G.engineer = {}
+
+
+--- @class Spring
+--- @field private stiffness number
+--- @field private dampening number
+--- @field private mass number
+--- @field private velocity number
+--- @field private target number
+--- @field private value number
+--- @field private initValue number
+--- @field private setter fun( value : number )
+local spring = {}
+
+
+--- @private
+spring.__index = spring
+
+
+--- @param deltaTime number
+function spring:update( deltaTime )
+    local velocity, target, value = self.velocity, self.target, self.value
+
+    -- Early exit
+    if value == target and velocity == 0 then return end
+
+    local stiffness, dampening, mass = self.stiffness, self.dampening, self.mass
+    local delta = value - target
+
+    local springForce = -stiffness * delta
+    local dampeningForce = -dampening * velocity
+    local totalForce = springForce + dampeningForce
+    local acceleration = totalForce / mass
+
+    self.velocity = velocity + acceleration * deltaTime
+    self.value = value + self.velocity * deltaTime
+
+    if self.setter then self.setter( self.value ) end
+end
+
+
+--- @param to number?
+function spring:reset( to )
+    self.value = to or self.initValue
+    self.velocity = 0
+end
+
+
+--- @param impulse number
+function spring:applyImpulse( impulse )
+    self.velocity = impulse
+end
+
+
+--- @param newTarget number
+function spring:setTarget( newTarget )
+    self.target = newTarget
+end
+
+
+--- @return number
+function spring:getValue()
+    return self.value
+end
+
+
+--- @param setter fun( value : number )
+function spring:addSetter( setter )
+    self.setter = setter
+end
+
+
+--- @param stiffness number
+--- @param dampening number
+--- @param mass number
+--- @param initValue number
+--- @return Spring
+function engineer.newSpring( stiffness, dampening, mass, initValue )
+    local obj = {
+        stiffness = stiffness,
+        dampening = dampening,
+        mass = mass,
+        target = initValue or 0,
+        velocity = 0,
+        value = initValue or 0,
+        initValue = initValue or 0,
+    }
+
+    setmetatable( obj, spring )
+
+    return obj
+end
+
+
+--- @class StateMachine
+--- @field private currentState State
+local stateMachine = {}
+
+
+--- @package
+--- @return boolean
+function stateMachine:earlyExit()
+    if not( self.currentState ) then return true end
+    if not( self.currentState.update ) then return true end
+    return false
+end
+
+
+--- @param deltaTime number
+function stateMachine:update( deltaTime )
+    if self:earlyExit() then return end
+
+    self.currentState.update( deltaTime )
+end
+
+
+function stateMachine:draw()
+    if self:earlyExit() then return end
+
+    self.currentState.draw()
+end
+
+
+--- @param newState State
+function stateMachine:changeState( newState )
+    if self.currentState and self.currentState.exit then
+        self.currentState.exit()
+    end
+
+    if newState.enter then newState.enter() end
+
+    self.currentState = newState
+end
+
+
+--- @return State
+function stateMachine:getState()
+    return self.currentState
+end
+
+
+--- @return StateMachine
+function engineer.newStateMachine()
+    local obj = { currentState = nil }
+    setmetatable( obj, stateMachine )
+    return obj
+end
+
+
+--- @private
+stateMachine.__index = stateMachine
+
+
+-- State
+--- @class State
+--- @field enter fun()
+--- @field exit fun()
+--- @field update fun( deltaTime : number )
+--- @field draw fun()
+
+
+--- @return State
+function engineer.newState()
+    return {}
+end
 --#endregion
 
 
@@ -610,6 +827,23 @@ function math.dirBetweenPoints( x1, y1, x2, y2 )
 end
 
 
+do
+    local bor, lshift = bit.bor, bit.lshift
+
+    --- @param ... boolean
+    --- @return integer
+    function math.boolsToInt( ... )
+        local int, size = 0, select( "#", ... )
+
+        for index = 1, size do
+            int = int + lshift( ( select( index, ... ) and 1 or 0 ), size - index )
+        end
+
+        return int
+    end
+end
+
+
 math.random = love.math.random
 
 
@@ -621,6 +855,7 @@ math.halfpi = math.pi * 0.5
 
 --#region === INPUT ===
 
+--- @class Pip.Input
 _G.input = {}
 
 
@@ -678,6 +913,7 @@ end
 
 --#region === DISPLAY ===
 
+--- @class Pip.Display
 _G.display = {
     --- @type integer, integer
     internalWidth = 0, internalHeight = 0,
@@ -718,29 +954,6 @@ function display.setInternalResolution( internalWidth, internalHeight )
 end
 
 
---- @param width integer
---- @param height integer
-function display.updateWindowDimensions( width, height )
-    display.windowWidth, display.windowHeight = width, height
-
-    scale = min( width / display.internalWidth, height / display.internalHeight )
-
-    if forcePixelPerfectScaling then
-        scale = math.floor( scale )
-    end
-
-    translateX = ( width - display.internalWidth * scale ) * 0.5
-    translateY = ( height - display.internalHeight * scale ) * 0.5
-
-    local x, y = love.mouse.getPosition()
-
-    mouseX = math.clamp( math.floor( ( x - translateX ) / scale + 0.5 ), 0, display.internalWidth )
-    mouseY = math.clamp( math.floor( ( y - translateY ) / scale + 0.5 ), 0, display.internalHeight )
-
-    if currentScene then currentScene:mouseMoved() end
-end
-
-
 --- @param doPixelPerfectScaling boolean
 function display.setPixelPerfectScaling( doPixelPerfectScaling )
     forcePixelPerfectScaling = doPixelPerfectScaling
@@ -750,6 +963,7 @@ end
 local function setMainCanvas()
     ---@diagnostic disable-next-line: missing-fields
     love.graphics.setCanvas{ mainCanvas, stencil = true }
+    love.graphics.clear()
 end
 
 
@@ -761,10 +975,6 @@ local function drawMainCanvas()
     love.graphics.setColor( 1, 1, 1, 1 )
 
     love.graphics.draw( mainCanvas )
-
-    love.graphics.setCanvas( mainCanvas )
-    love.graphics.clear()
-    love.graphics.setCanvas()
 end
 
 --#endregion
@@ -772,6 +982,7 @@ end
 
 --#region === ECS ===
 
+--- @class Pip.ECS
 _G.ecs = {}
 
 
@@ -886,7 +1097,6 @@ end
 
 --- @class System
 --- @field private filter Filter
---- @field private entities List< table >
 --- @field private isPre boolean
 local baseSystem = {}
 
@@ -895,25 +1105,11 @@ local baseSystem = {}
 baseSystem.__index = baseSystem
 
 
---- Returns all the entities that this system will apply to with its filter.
---- @return List< table >
-function baseSystem:getEntities()
-    return self.entities
-end
-
-
 --- @package
 --- @param entity table
-function baseSystem:addEntity( entity )
-    if not( self.filter:filterEntity( entity ) ) then return end
-    self.entities:append( entity )
-end
-
-
---- @package
---- @param entity table
-function baseSystem:deleteEntity( entity )
-    self.entities:eraseSwapback( entity )
+--- @return boolean
+function baseSystem:tryEntity( entity )
+    return self.filter:filterEntity( entity )
 end
 
 
@@ -930,7 +1126,6 @@ local function newSystem( filter, isPre )
     local obj = {}
 
     obj.filter = filter
-    obj.entities = teacher.makeList()
     obj.isPre = isPre
 
     setmetatable( obj, baseSystem )
@@ -950,7 +1145,6 @@ baseDrawSystem.__index = baseDrawSystem
 
 
 --- @param filter Filter
---- @param isPreDrawSystem boolean If true, will execute BEFORE the scene.draw function. If false it will execute AFTER.
 --- @return DrawSystem
 function ecs.newDrawSystem( filter, isPreDrawSystem )
     local system = newSystem( filter, isPreDrawSystem )
@@ -989,6 +1183,7 @@ end
 
 --#region === SCENE MANAGER ===
 
+--- @class Pip.SceneManager
 _G.sceneManager = {}
 
 
@@ -1004,48 +1199,72 @@ function sceneManager.changeScene( newScene )
 end
 
 
+--- @package
 function sceneManager.update( deltaTime )
     if not( currentScene ) then return end
 
-    for _, system in ipairs( currentScene:getPreUpdateSystems() ) do
-        for _, entity in ipairs( system:getEntities() ) do
-            system.update( entity, deltaTime )
+    local preUpdateSystems, postUpdateSystems = currentScene:getPreUpdateSystems(), currentScene:getPostUpdateSystems()
+    local entities = currentScene:getEntities()
+
+    if preUpdateSystems:isEmpty() then goto skipPreUpdate end
+    for _, entity in ipairs( entities ) do
+        for _, system in ipairs( preUpdateSystems ) do
+            if system:tryEntity( entity ) then system.update( entity, deltaTime ) end
         end
     end
+    ::skipPreUpdate::
 
     currentScene.update( deltaTime )
 
-    for _, system in ipairs( currentScene:getPostUpdateSystems() ) do
-        for _, entity in ipairs( system:getEntities() ) do
-            system.update( entity, deltaTime )
+    if postUpdateSystems:isEmpty() then goto skipPostUpdate end
+    for _, entity in ipairs( entities ) do
+        for _, system in ipairs( postUpdateSystems ) do
+            if system:tryEntity( entity ) then system.update( entity, deltaTime ) end
         end
     end
+    ::skipPostUpdate::
 
     currentScene:cleanup()
 end
 
 
+local function clearCanvas()
+    love.graphics.clear()
+end
+
+
+--- @package
 function sceneManager.draw()
     if not( currentScene ) then return end
+
+    local drawSystems = currentScene:getDrawSystems()
+    local entities = currentScene:getEntities()
+    local guiElements = currentScene:getDrawableGUIElements()
+
+    if table.isEmpty( drawSystems ) then goto skipSystemDraw end
+
+    for _, canvas in pairs( drawSystems ) do
+        canvas:renderTo( clearCanvas )
+    end
+
+    for _, entity in ipairs( entities ) do
+        for system, canvas in pairs( drawSystems ) do
+            ---@diagnostic disable-next-line: redundant-parameter
+            if system:tryEntity( entity ) then canvas:renderTo( system.draw, entity ) end
+        end
+    end
+
+    ::skipSystemDraw::
+
+    for element, canvas in pairs( guiElements ) do
+        canvas:renderTo( clearCanvas )
+        ---@diagnostic disable-next-line: redundant-parameter
+        canvas:renderTo( element.draw, element )
+    end
+
     setMainCanvas()
 
-    for _, system in ipairs( currentScene:getPreDrawSystems() ) do
-        for _, entity in ipairs( system:getEntities() ) do
-            system.draw( entity )
-        end
-    end
-
     currentScene.draw()
-
-    for _, system in ipairs( currentScene:getPostDrawSystems() ) do
-        for _, entity in ipairs( system:getEntities() ) do
-            system.draw( entity )
-        end
-    end
-
-    for _, element in ipairs( currentScene:getDrawableGUIElements() ) do
-        element:draw()
-    end
 
     drawMainCanvas()
 end
@@ -1054,15 +1273,13 @@ end
 -- Scenes
 
 --- @class Scene
---- @field private preDrawSystems List< DrawSystem >
---- @field private postDrawSystems List< DrawSystem >
+--- @field private drawSystems table< DrawSystem, love.Canvas >
 --- @field private preUpdateSystems List< UpdateSystem >
 --- @field private postUpdateSystems List< UpdateSystem >
---- @field private allSystems List< System >
 --- @field private entities List< table >
 --- @field private entityTrash List< table >
---- @field private inputActiveGUIElements List<GUI.Element>
---- @field private drawGUIElements List<GUI.Element>
+--- @field private inputGUIElements List<GUI.Element>
+--- @field private drawGUIElements table< DrawSystem, love.Canvas >
 --- @field enter fun()
 --- @field exit fun()
 --- @field update fun( deltaTime : number )
@@ -1077,27 +1294,26 @@ baseScene.__index = baseScene
 --- @param entity table
 function baseScene:addEntity( entity )
     self.entities:append( entity )
+end
 
-    for _, system in ipairs( self.allSystems ) do
-        system:addEntity( entity )
-    end
+
+--- @param canvas love.Canvas
+local function checkCanvasDimensions( canvas )
+    local width, height = canvas:getDimensions()
+    local error = "Canvas is the wrong size! It should be make using artist.makeScreenCanvas!"
+    assert( width == display.internalWidth and height == display.internalHeight, error )
 end
 
 
 --- @param system System
-function baseScene:addSystem( system )
-    for _, entity in ipairs( self.entities ) do
-        system:addEntity( entity )
-    end
-
+--- @param canvas love.Canvas?
+function baseScene:addSystem( system, canvas )
     local metatable = getmetatable( system )
 
     if metatable == baseDrawSystem then
-        if system:getIsPre() then
-            self.preDrawSystems:append( system )
-        else
-            self.postDrawSystems:append( system )
-        end
+        assert( canvas, "You need a canvas with your draw system!" )
+        checkCanvasDimensions( canvas )
+        self.drawSystems[ system ] = canvas
     elseif metatable == baseUpdateSystem then
         if system:getIsPre() then
             self.preUpdateSystems:append( system )
@@ -1105,37 +1321,83 @@ function baseScene:addSystem( system )
             self.postUpdateSystems:append( system )
         end
     end
-
-    self.allSystems:append( system )
 end
 
 
---- @param element GUI.Element
-function baseScene:addGUITreeToScene( element )
-    element:addToScene( self )
+do
+    local stack = teacher.makeList()
+
+    --- @param element GUI.Element
+    --- @param canvas love.Canvas
+    function baseScene:addGUITree( element, canvas )
+        stack:clear()
+        stack:append( element )
+
+        while not( stack:isEmpty() ) do
+            --- @type GUI.Element
+            element = stack:popBack()
+
+            if not( element:getParent() ) then
+                checkCanvasDimensions( canvas )
+                self.drawGUIElements[ element ] = canvas
+            end
+            self.inputGUIElements:append( element )
+
+            for _, child in ipairs( element:getChildren() ) do
+                stack:append( child )
+            end
+        end
+    end
+
+
+    --- @param element GUI.Element
+    function baseScene:removeGUITree( element )
+        stack:clear()
+        stack:append( element )
+
+        while not( stack:isEmpty() ) do
+            --- @type GUI.Element
+            element = stack:popBack()
+
+            self.drawGUIElements[ element ] = nil
+            self.inputGUIElements:erase( element )
+
+            for _, child in ipairs( element:getChildren() ) do
+                stack:append( child )
+            end
+        end
+    end
+
 end
 
 
 --- @package
 --- @return List<GUI.Element>
 function baseScene:getInputActiveGUIElements()
-    return self.inputActiveGUIElements
+    return self.inputGUIElements
 end
 
 
 
 --- @package
---- @return List<GUI.Element>
+--- @return table< DrawSystem, love.Canvas >
 function baseScene:getDrawableGUIElements()
     return self.drawGUIElements
+end
+
+
+--- @package
+--- @return List< table >
+function baseScene:getEntities()
+    return self.entities
 end
 
 
 
 --- @package
 function baseScene:mouseMoved()
-    for _, element in ipairs( self.inputActiveGUIElements ) do
-        element:mouseMoved( mouseX, mouseY )
+    for _, element in ipairs( self.inputGUIElements ) do
+        if element.inputActive then element:mouseMoved( mouseX, mouseY ) end
     end
 end
 
@@ -1143,8 +1405,8 @@ end
 --- @package
 --- @param button MouseButton
 function baseScene:mouseClicked( button )
-    for _, element in ipairs( self.inputActiveGUIElements ) do
-        element:mouseButtonClicked( button )
+    for _, element in ipairs( self.inputGUIElements ) do
+        if element.inputActive then element:mouseButtonClicked( button ) end
     end
 end
 
@@ -1152,8 +1414,8 @@ end
 --- @package
 --- @param button MouseButton
 function baseScene:mouseReleased( button )
-    for _, element in ipairs( self.inputActiveGUIElements ) do
-        element:mouseButtonReleased( button )
+    for _, element in ipairs( self.inputGUIElements ) do
+        if element.inputActive then element:mouseButtonReleased( button ) end
     end
 end
 
@@ -1170,9 +1432,7 @@ function baseScene:cleanup()
     if self.entityTrash:isEmpty() then return end
 
     for _, entity in ipairs( self.entityTrash ) do
-        for _, system in ipairs( self.allSystems ) do
-            system:deleteEntity( entity )
-        end
+        self.entities:erase( entity )
     end
 
     self.entityTrash:clear()
@@ -1187,23 +1447,16 @@ end
 
 
 --- @package
+--- @return table< DrawSystem, love.Canvas>
+function baseScene:getDrawSystems()
+    return self.drawSystems
+end
+
+
+--- @package
 --- @return List< UpdateSystem >
 function baseScene:getPostUpdateSystems()
     return self.postUpdateSystems
-end
-
-
---- @package
---- @return List< DrawSystem >
-function baseScene:getPreDrawSystems()
-    return self.preDrawSystems
-end
-
-
---- @package
---- @return List< DrawSystem >
-function baseScene:getPostDrawSystems()
-    return self.postDrawSystems
 end
 
 
@@ -1211,15 +1464,13 @@ end
 function sceneManager.newScene()
     local object = {}
 
-    object.preDrawSystems = teacher.makeList()
-    object.postDrawSystems = teacher.makeList()
+    object.drawSystems = {}
     object.preUpdateSystems = teacher.makeList()
     object.postUpdateSystems = teacher.makeList()
-    object.allSystems = teacher.makeList()
     object.entities = teacher.makeList()
     object.entityTrash = teacher.makeList()
-    object.inputActiveGUIElements = teacher.makeList()
-    object.drawGUIElements = teacher.makeList()
+    object.inputGUIElements = teacher.makeList()
+    object.drawGUIElements = {}
 
     object.enter = function () end
     object.exit = function () end
@@ -1232,211 +1483,12 @@ function sceneManager.newScene()
 end
 
 
--- Init
-setInternalDimensions( 800, 600 )
-display.updateWindowDimensions( 800, 600 )
-
-
---#endregion
-
-
---#region === SPRING ===
-
-
---- @class Spring
---- @field private stiffness number
---- @field private dampening number
---- @field private mass number
---- @field private velocity number
---- @field private target number
---- @field private value number
---- @field private initValue number
---- @field private setter fun( value : number )
-local spring = {}
-
-
---- @private
-spring.__index = spring
-
-
---- @param deltaTime number
-function spring:update( deltaTime )
-    local velocity, target, value = self.velocity, self.target, self.value
-
-    -- Early exit
-    if value == target and velocity == 0 then return end
-
-    local stiffness, dampening, mass = self.stiffness, self.dampening, self.mass
-    local delta = value - target
-
-    local springForce = -stiffness * delta
-    local dampeningForce = -dampening * velocity
-    local totalForce = springForce + dampeningForce
-    local acceleration = totalForce / mass
-
-    self.velocity = velocity + acceleration * deltaTime
-    self.value = value + self.velocity * deltaTime
-
-    if self.setter then self.setter( self.value ) end
-end
-
-
---- @param to number?
-function spring:reset( to )
-    self.value = to or self.initValue
-    self.velocity = 0
-end
-
-
---- @param impulse number
-function spring:applyImpulse( impulse )
-    self.velocity = impulse
-end
-
-
---- @param newTarget number
-function spring:setTarget( newTarget )
-    self.target = newTarget
-end
-
-
---- @return number
-function spring:getValue()
-    return self.value
-end
-
-
---- @param setter fun( value : number )
-function spring:addSetter( setter )
-    self.setter = setter
-end
-
-
---- @param stiffness number
---- @param dampening number
---- @param mass number
---- @param initValue number
---- @return Spring
-function _G.newSpring( stiffness, dampening, mass, initValue )
-    local obj = {
-        stiffness = stiffness,
-        dampening = dampening,
-        mass = mass,
-        target = initValue or 0,
-        velocity = 0,
-        value = initValue or 0,
-        initValue = initValue or 0,
-    }
-
-    setmetatable( obj, spring )
-
-    return obj
-end
-
---#endregion
-
-
---#region === STATE MACHINE ===
-
--- State Machine
---- @class StateMachine
---- @field private currentState State
-local stateMachine = {}
-
-
---- @package
---- @return boolean
-function stateMachine:earlyExit()
-    if not( self.currentState ) then return true end
-    if not( self.currentState.update ) then return true end
-    return false
-end
-
-
---- @param deltaTime number
-function stateMachine:update( deltaTime )
-    if self:earlyExit() then return end
-
-    self.currentState.update( deltaTime )
-end
-
-
-function stateMachine:draw()
-    if self:earlyExit() then return end
-
-    self.currentState.draw()
-end
-
-
---- @param newState State
-function stateMachine:changeState( newState )
-    if self.currentState and self.currentState.exit then
-        self.currentState.exit()
-    end
-
-    if newState.enter then newState.enter() end
-
-    self.currentState = newState
-end
-
-
-function _G.newStateMachine()
-    local obj = { currentState = nil }
-    setmetatable( obj, stateMachine )
-    return obj
-end
-
-
---- @private
-stateMachine.__index = stateMachine
-
-
--- State
---- @class State
---- @field enter fun()
---- @field exit fun()
---- @field update fun( deltaTime : number )
---- @field draw fun()
-
-
---- @return State
-function _G.newState()
-    return {}
-end
-
-
---#endregion
-
-
---#region === COMMAND ===
-
--- Command Result
-
-
---- @class Command
---- @field perform fun( ... ) : CommandResult
-
-
---- @enum CommandResult
-_G.commandResult = {
-    SUCCESS = 0,
-    FAILURE = 1
-}
-
-
-
---- @return Command
-function  _G.newCommand()
-    return {}
-end
-
-
 --#endregion
 
 
 --#region === GUI ===
 
-
+--- @class Pip.GUI
 _G.gui = {}
 
 
@@ -1446,7 +1498,7 @@ _G.gui = {}
 --- @alias GUI.HorizontalAlign "left" | "center" | "right"
 --- @alias GUI.VerticalAlign "top" | "center" | "bottom"
 --- @alias GUI.Axis "x" | "y"
---- @alias GUI.Setup { width : GUI.SizeMode, height : GUI.SizeMode, minWidth : number, minHeight : number, maxWidth : number, maxHeight : number, x : number, y : number, layoutDirection : GUI.LayoutDirection, horizontalAlign : GUI.HorizontalAlign, verticalAlign : GUI.VerticalAlign, childSpacing : number, paddingAll : number, paddingTop : number, paddingBottom : number, paddingLeft : number, paddingRight : number, text : string, textHorizontalAlign : love.AlignMode, textVerticalAlign : GUI.VerticalAlign, font : love.Font, round : boolean, texture : love.Texture, mouseEntered : fun( element : GUI.Element ), mouseExited : fun( element : GUI.Element ), color : Color, backgroundColor : Color, shadowOffsetX : number, shadowOffsetY : number, shadowColor : Color, textShadowOffsetX : number, textShadowOffsetY : number, scale : number, rotation : number, mouseEntered : fun( element : GUI.Element ), mouseExited : fun( element : GUI.Element ), mouseButton : MouseButton, mousePressed : fun( element : GUI.Element ), mouseReleased : fun( element : GUI.Element ) }
+--- @alias GUI.Setup { width : GUI.SizeMode, height : GUI.SizeMode, minWidth : number, minHeight : number, maxWidth : number, maxHeight : number, x : number, y : number, layoutDirection : GUI.LayoutDirection, horizontalAlign : GUI.HorizontalAlign, verticalAlign : GUI.VerticalAlign, childSpacing : number, paddingAll : number, paddingTop : number, paddingBottom : number, paddingLeft : number, paddingRight : number, text : string, textHorizontalAlign : love.AlignMode, textVerticalAlign : GUI.VerticalAlign, font : love.Font, round : boolean, texture : love.Texture, mouseEntered : fun( element : GUI.Element ), mouseExited : fun( element : GUI.Element ), color : Color, backgroundColor : Color, shadowOffsetX : number, shadowOffsetY : number, shadowColor : Color, textShadowOffsetX : number, textShadowOffsetY : number, scale : number, rotation : number, mouseEntered : fun( element : GUI.Element ), mouseExited : fun( element : GUI.Element ), mouseButton : MouseButton, mousePressed : fun( element : GUI.Element ), mouseReleased : fun( element : GUI.Element ), inputActive : boolean, visible : boolean }
 
 local elementStack = teacher.makeList()
 
@@ -1482,12 +1534,12 @@ local elementStack = teacher.makeList()
 --- @field private shadowOffsetX number
 --- @field private shadowOffsetY number
 --- @field private shadowColor Color
---- @field private rotation number
---- @field private mouseEntered fun( element : GUI.Element )
---- @field private mouseExited fun( element : GUI.Element )
+--- @field rotation number
 --- @field private mouseButton MouseButton
---- @field private mousePressed fun( element : GUI.Element )
---- @field private mouseReleased fun( element : GUI.Element )
+--- @field mouseEntered fun( element : GUI.Element )
+--- @field mouseExited fun( element : GUI.Element )
+--- @field mousePressed fun( element : GUI.Element )
+--- @field mouseReleased fun( element : GUI.Element )
 --- @field color Color
 --- @field backgroundColor Color
 --- @field scale number
@@ -1567,7 +1619,6 @@ end
 function element:init()
     self.parent = nil
     self.children = teacher.makeList()
-    self.mouseInBox = false
 
     local width = self.width
     if type( width ) == "number" then self.internalWidth = width end
@@ -1606,10 +1657,6 @@ function element:init()
         if not( self:isFixed( "internalHeight" ) ) and not( self.userSetMinHeight ) then
             self.minHeight = texture:getHeight() + self.verticalPadding
         end
-    end
-
-    if self.mouseEntered or self.mouseExited or self.mousePressed or self.mouseReleased then
-        self.inputActive = true
     end
 end
 
@@ -2119,9 +2166,50 @@ function element:mouseButtonReleased( button )
 end
 
 
+--- @package
+--- @return GUI.Element?
+function element:getParent()
+    return self.parent
+end
+
+
+--- @package
+--- @return List< GUI.Element >
+function element:getChildren()
+    return self.children
+end
+
+
 -- Draw
 
-function element:draw()
+do
+    local elementQueue = teacher.makeQueue()
+
+    --- @package
+    function element:draw()
+        if not( self.visible ) then return end
+
+        elementQueue:clear()
+        elementQueue:enqueue( self )
+
+        while not( elementQueue:isEmpty() ) do
+            --- @type GUI.Element
+            local current = elementQueue:next()
+
+            if current.visible then
+                for _, child in ipairs( current.children ) do
+                    elementQueue:enqueue( child )
+                end
+
+                current:drawSelf()
+            end
+        end
+    end
+end
+
+
+--- @package
+function element:drawSelf()
     love.graphics.push()
 
     local round = self.round
@@ -2129,10 +2217,12 @@ function element:draw()
     local width, height = self.internalWidth, self.internalHeight
     local texture = self.texture
 
-    if not( self.visible ) then goto skip end
-
     if not( self.scale == 1 ) then
         artist.scale( self.scale, x + width * 0.5, y + height * 0.5 )
+    end
+
+    if not( self.rotation == 0 ) then
+        artist.rotate( self.rotation, x + width * 0.5, y + height * 0.5)
     end
 
     if self.drawShadow then
@@ -2181,59 +2271,53 @@ function element:draw()
         artist.write( self.text, x + self.paddingLeft, y + verticalPush, limit, self.textHorizontalAlign, self.color, font )
     end
 
-    ::skip::
-
-    for _, child in ipairs( self.children ) do
-        child:draw()
-    end
-
     love.graphics.pop()
 end
-
-
-do
-
-local elementQueue = teacher.makeQueue()
-
---- @package
---- @param scene Scene
-function element:addToScene( scene )
-    if self.parent then
-        self.parent:addToScene( scene )
-        return
-    end
-
-    local drawList = scene:getDrawableGUIElements()
-    local inputList = scene:getInputActiveGUIElements()
-
-    drawList:append( self )
-
-    elementQueue:clear()
-    elementQueue:enqueue( self )
-
-    while not( elementQueue:isEmpty() ) do
-        --- @type GUI.Element
-        local current = elementQueue:next()
-
-        if current.inputActive then
-            inputList:append( current )
-        end
-
-        for _, child in ipairs( current.children ) do
-            elementQueue:enqueue( child )
-        end
-    end
-end
-end
-
 
 --#endregion
 
 
---#region === LOVE.RUN ===
+--#region === LOVE ===
+
+--- @param directory string
+function _G.loadDirectory( directory )
+    --- @type string[]
+    local files = love.filesystem.getDirectoryItems( directory )
+
+    for _, file in ipairs( files ) do
+        if not( file:find( ".lua" ) ) then
+            loadDirectory( directory.."/"..file )
+        else
+            require( string.gsub( directory..".", "/", "." )..file:gsub( ".lua", "" ) )
+        end
+    end
+end
 
 
 local callbacks = {}
+
+
+--- @param width integer
+--- @param height integer
+function callbacks.resize( width, height )
+    display.windowWidth, display.windowHeight = width, height
+
+    scale = min( width / display.internalWidth, height / display.internalHeight )
+
+    if forcePixelPerfectScaling then
+        scale = math.floor( scale )
+    end
+
+    translateX = ( width - display.internalWidth * scale ) * 0.5
+    translateY = ( height - display.internalHeight * scale ) * 0.5
+
+    local x, y = love.mouse.getPosition()
+
+    mouseX = math.clamp( math.floor( ( x - translateX ) / scale + 0.5 ), 0, display.internalWidth )
+    mouseY = math.clamp( math.floor( ( y - translateY ) / scale + 0.5 ), 0, display.internalHeight )
+
+    if currentScene then currentScene:mouseMoved() end
+end
 
 
 --- @param key love.KeyConstant
@@ -2280,8 +2364,9 @@ local function resetMouseButtonsPressed()
     mouseButtonsJustPressed:clear()
 end
 
+
 function love.run()
-    love.load()
+    if love.load then love.load() end
 
     love.timer.step()
 
@@ -2324,5 +2409,9 @@ function love.run()
     end
 end
 
+
+-- Init
+setInternalDimensions( 800, 600 )
+callbacks.resize( 800, 600 )
 
 --#endregion
