@@ -10,11 +10,9 @@ _G.teacher = {}
 
 
 --- @class Class
+--- @field private __index table
 --- @field super any
 local class = {}
-
-
---- @private
 class.__index = class
 
 
@@ -72,10 +70,8 @@ end
 
 
 --- @class List<T>: { [integer]: T }
+--- @field private __index table
 local list = {}
-
-
---- @private
 list.__index = list
 
 
@@ -202,11 +198,10 @@ end
 
 -- Queue
 --- @class Queue
+--- @field private __index table
 --- @field private first number
 --- @field private last number
 local queue = {}
-
---- @private
 queue.__index = queue
 
 
@@ -258,6 +253,72 @@ do
     end
 end
 
+
+-- Sparse Set
+
+--- @class SparseSet<T>
+--- @field private __index table
+--- @field private sparse table
+--- @field private dense table
+local basesparseSet = {}
+basesparseSet.__index = basesparseSet
+
+
+--- @param value any
+function basesparseSet:append( value )
+    local dense, sparse = self.dense, self.sparse
+
+    if sparse[ value ] then return end
+
+    table.insert( dense, value )
+    sparse[ value ] = #dense
+end
+
+
+--- @param value any
+function basesparseSet:erase( value )
+    local sparse, dense = self.sparse, self.dense
+    local index, backOfDense = sparse[ value ], dense[ #dense ]
+
+    if not( index ) then return end
+
+    dense[ index ] = backOfDense
+    sparse[ backOfDense ] = index
+
+    dense[ #dense ] = nil
+    sparse[ value ] = nil
+end
+
+
+function basesparseSet:iterate()
+    local dense = self.dense
+    local index, limit = 0, #dense
+
+    return function ()
+        index = index + 1
+        if index <= limit then return dense[ index ] end
+    end
+end
+
+
+--- @param value any
+--- @return boolean
+function basesparseSet:has( value )
+    return self.sparse[ value ] ~= nil
+end
+
+
+--- @return integer
+function basesparseSet:length()
+    return #self.dense
+end
+
+
+--- @return SparseSet
+function teacher.makeSparseSet()
+    return setmetatable( { sparse = {}, dense = {} }, basesparseSet )
+end
+
 --#endregion
 
 
@@ -270,14 +331,12 @@ _G.artist = {}
 -- Color
 
 --- @class Color
+--- @field private __index table
 --- @field red integer
 --- @field green integer
 --- @field blue integer
 --- @field alpha integer
 local baseColor = {}
-
-
---- @private
 baseColor.__index = baseColor
 
 function baseColor:setDrawColor()
@@ -409,7 +468,7 @@ end
 --- @param height number
 --- @param drawfunc function
 --- @return love.Canvas
-function artist.newStaticCanvas( width, height, drawfunc )
+function artist.makeStaticCanvas( width, height, drawfunc )
     local canvas = love.graphics.newCanvas( width, height )
     canvas:renderTo( drawfunc )
     return canvas
@@ -421,7 +480,7 @@ end
 --- @param emissionRate number
 --- @param initEmissions number?
 --- @return love.ParticleSystem
-function artist.newParticleSystem( texture, limit, emissionRate, initEmissions )
+function artist.makeParticleSystem( texture, limit, emissionRate, initEmissions )
     local system = love.graphics.newParticleSystem( texture, limit )
     system:setEmissionRate( emissionRate )
     if initEmissions then system:emit( initEmissions ) end
@@ -451,7 +510,7 @@ end
 
 --- @return love.Canvas
 function artist.makeScreenCanvas()
-    local canvas = love.graphics.newCanvas( display.internalWidth, display.internalHeight )
+    local canvas = love.graphics.newCanvas( stage.internalWidth, stage.internalHeight )
     canvas:setFilter( "nearest", "nearest" )
     return canvas
 end
@@ -465,6 +524,104 @@ function artist.paintCanvas( canvas, x, y )
     love.graphics.draw( canvas, x or 0 , y or 0 )
 end
 
+
+--- @param drawSystem DrawSystem
+function artist.paintDrawSystem( drawSystem )
+    if not( currentScene ) then return end
+
+    local drawCanvases = currentScene:getDrawCanvases()
+
+    artist.paintCanvas( drawCanvases[ drawSystem ] )
+end
+
+
+-- Spritesheet
+
+--- @class SpriteSheet
+--- @field private __index table
+--- @field private quads List< love.Quad >
+--- @field private image love.Image
+--- @field private frameTime number
+--- @field private time number
+--- @field private currentQuadIndex integer
+--- @field private frames integer
+--- @field width integer
+--- @field height integer
+local baseSpritesheet = {}
+baseSpritesheet.__index = baseSpritesheet
+
+
+--- @private
+function baseSpritesheet:makeQuads( rows, columns, frames )
+    local image, floor = self.image, math.floor
+    local imageWidth, imageHeight = image:getDimensions()
+    local makeQuad = love.graphics.newQuad
+    local quads = self.quads
+    local frameWidth = floor( imageWidth / columns )
+    local frameHeight = floor( imageHeight / rows )
+
+    self.width, self.height = frameWidth, frameHeight
+
+    local frame = 0
+    for y = 0, rows - 1 do
+        for x = 0, columns - 1 do
+            local quad = makeQuad( x * frameWidth, y * frameHeight, frameWidth, frameHeight, imageWidth, imageHeight )
+            quads:append( quad )
+
+            frame = frame + 1
+            if frame >= frames then return end
+        end
+    end
+end
+
+
+--- @param deltaTime number
+function baseSpritesheet:update( deltaTime )
+    self.time = self.time + deltaTime
+
+    if self.time >= self.frameTime then
+        self.time = 0
+        self.currentQuadIndex = self.currentQuadIndex + 1
+        if self.currentQuadIndex > self.frames then
+            self.currentQuadIndex = 1
+        end
+    end
+end
+
+
+--- @param x integer
+--- @param y integer
+function baseSpritesheet:draw( x, y )
+    local quad = self.quads[ self.currentQuadIndex ]
+    setColor()
+    love.graphics.draw( self.image, quad, x, y )
+end
+
+
+--- @param path string
+--- @param rows integer
+--- @param columns integer
+--- @param frames integer
+--- @param fps integer
+--- @return SpriteSheet
+function artist.makeSpritesheet( path, rows, columns, frames, fps )
+    local image = love.graphics.newImage( path )
+    local t = {
+        image = image,
+        frameTime = 1 / fps,
+        frames = frames,
+        currentQuadIndex = 1,
+        quads = teacher.makeList(),
+        time = 0
+    }
+
+    setmetatable( t, baseSpritesheet )
+
+    t:makeQuads( rows, columns, frames )
+
+    return t
+end
+
 --#endregion
 
 
@@ -475,14 +632,12 @@ _G.writer = {}
 
 
 --- @class Font
+--- @field private __index table
 --- @field private path string?
 --- @field private sizeStep number?
 --- @field private sizes table<number, love.Font>
 --- @field private hinting love.HintingMode
 local customFont = {}
-
-
---- @private
 customFont.__index = customFont
 
 
@@ -592,6 +747,7 @@ _G.engineer = {}
 
 
 --- @class Spring
+--- @field private __index table
 --- @field private stiffness number
 --- @field private dampening number
 --- @field private mass number
@@ -601,9 +757,6 @@ _G.engineer = {}
 --- @field private initValue number
 --- @field private setter fun( value : number )
 local spring = {}
-
-
---- @private
 spring.__index = spring
 
 
@@ -665,7 +818,7 @@ end
 --- @param mass number
 --- @param initValue number
 --- @return Spring
-function engineer.newSpring( stiffness, dampening, mass, initValue )
+function engineer.makeSpring( stiffness, dampening, mass, initValue )
     local obj = {
         stiffness = stiffness,
         dampening = dampening,
@@ -683,8 +836,10 @@ end
 
 
 --- @class StateMachine
+--- @field private __index table
 --- @field private currentState State
 local stateMachine = {}
+stateMachine.__index = stateMachine
 
 
 --- @package
@@ -730,15 +885,11 @@ end
 
 
 --- @return StateMachine
-function engineer.newStateMachine()
+function engineer.makeStateMachine()
     local obj = { currentState = nil }
     setmetatable( obj, stateMachine )
     return obj
 end
-
-
---- @private
-stateMachine.__index = stateMachine
 
 
 -- State
@@ -750,7 +901,7 @@ stateMachine.__index = stateMachine
 
 
 --- @return State
-function engineer.newState()
+function engineer.makeState()
     return {}
 end
 --#endregion
@@ -853,14 +1004,14 @@ math.halfpi = math.pi * 0.5
 --#endregion
 
 
---#region === INPUT ===
+--#region === CAPTAIN ===
 
---- @class Pip.Input
-_G.input = {}
+--- @class Pip.Captain
+_G.captain = {}
 
 
 --- @enum MouseButton
-input.mouseButton = {
+captain.mouseButton = {
     left = 1,
     right = 2,
     middle = 3
@@ -876,34 +1027,34 @@ local mouseX, mouseY = 0, 0
 
 --- @param key love.KeyConstant
 --- @return boolean
-function input.isKeyDown( key )
+function captain.isKeyDown( key )
     return keysDown:has( key )
 end
 
 
 --- @param key love.KeyConstant
 --- @return boolean
-function input.isKeyJustPressed( key )
+function captain.isKeyJustPressed( key )
     return keysJustPressed:has( key )
 end
 
 
 --- @param button MouseButton
 --- @return boolean
-function input.isMouseButtonDown( button )
+function captain.isMouseButtonDown( button )
     return mouseButtonsDown:has( button )
 end
 
 
 --- @param button MouseButton
 --- @return boolean
-function input.isMouseButtonJustPressed( button )
+function captain.isMouseButtonJustPressed( button )
     return mouseButtonsJustPressed:has( button )
 end
 
 
 --- @return number, number
-function input.getMousePosition()
+function captain.getMousePosition()
     return mouseX, mouseY
 end
 
@@ -911,10 +1062,10 @@ end
 --#endregion
 
 
---#region === DISPLAY ===
+--#region === STAGE ===
 
---- @class Pip.Display
-_G.display = {
+--- @class Pip.Stage
+_G.stage = {
     --- @type integer, integer
     internalWidth = 0, internalHeight = 0,
     --- @type number, number
@@ -931,7 +1082,7 @@ local mainCanvas = nil
 
 
 local function updateMainCanvas()
-    mainCanvas = love.graphics.newCanvas( display.internalWidth, display.internalHeight )
+    mainCanvas = love.graphics.newCanvas( stage.internalWidth, stage.internalHeight )
     mainCanvas:setFilter( "nearest", "nearest" )
 end
 
@@ -939,8 +1090,8 @@ end
 --- @param width integer
 --- @param height integer
 local function setInternalDimensions( width, height )
-    display.internalWidth, display.internalHeight = width, height
-    display.centerX, display.centerY = width * 0.5, height * 0.5
+    stage.internalWidth, stage.internalHeight = width, height
+    stage.centerX, stage.centerY = width * 0.5, height * 0.5
 
     updateMainCanvas()
 end
@@ -948,14 +1099,14 @@ end
 
 --- @param internalWidth integer
 --- @param internalHeight integer
-function display.setInternalResolution( internalWidth, internalHeight )
+function stage.setInternalResolution( internalWidth, internalHeight )
     setInternalDimensions( internalWidth, internalHeight )
     love.window.setMode( internalWidth, internalHeight, { resizable = true } )
 end
 
 
 --- @param doPixelPerfectScaling boolean
-function display.setPixelPerfectScaling( doPixelPerfectScaling )
+function stage.setPixelPerfectScaling( doPixelPerfectScaling )
     forcePixelPerfectScaling = doPixelPerfectScaling
 end
 
@@ -963,7 +1114,7 @@ end
 local function setMainCanvas()
     ---@diagnostic disable-next-line: missing-fields
     love.graphics.setCanvas{ mainCanvas, stencil = true }
-    love.graphics.clear()
+    love.graphics.clear( love.graphics.getBackgroundColor() )
 end
 
 
@@ -980,10 +1131,10 @@ end
 --#endregion
 
 
---#region === ECS ===
+--#region === DARK ECS ===
 
---- @class Pip.ECS
-_G.ecs = {}
+--- @class Pip.Dark
+_G.dark = {}
 
 
 -- Filters
@@ -994,7 +1145,7 @@ end
 
 
 --- @enum FilterType
-ecs.filterType = {
+dark.filterType = {
     requireAll = function ( entity, ... )
         for index = 1, select( "#", ... ) do
             if not( entityHasKey( entity, ( select( index, ... ) ) ) ) then
@@ -1037,14 +1188,23 @@ ecs.filterType = {
 }
 
 
+--- @param entity table
+---@param name string
+---@param value any
+function dark.setComponent( entity, name, value )
+    entity[ name ] = value
+    if not( currentScene ) then return end
+    currentScene:updateEntity( entity )
+end
+
+
 --- @class Filter
+--- @field private __index table
 --- @field private type FilterType
 --- @field private requiredComponents string[]
 --- @field private subfilters List< Filter >
+--- @field private entities SparseSet< table >
 local baseFilter = {}
-
-
---- @private
 baseFilter.__index = baseFilter
 
 
@@ -1064,12 +1224,35 @@ function baseFilter:filterEntity( entity )
 end
 
 
+--- @param entity table
+--- @package
+function baseFilter:addEntity( entity )
+    if not( self:filterEntity( entity ) ) then return end
+    self.entities:append( entity )
+end
+
+
+--- @package
+--- @param entity table
+function baseFilter:eraseEntity( entity )
+    self.entities:erase( entity )
+end
+
+
+--- @package
+--- @return SparseSet< table >
+function baseFilter:getEntities()
+    return self.entities
+end
+
+
 --- @overload fun( type : FilterType, component : string, ... : string ) : Filter
 --- @overload fun( subfilter : Filter, ... : Filter ) : Filter
-function ecs.newFilter( ... )
+function dark.makeFilter( ... )
     local newFilter = {}
     newFilter.type = nil
     newFilter.requiredComponents = {}
+    newFilter.entities = teacher.makeSparseSet()
     newFilter.subfilters = teacher.makeList()
 
     for index = 1, select ( "#", ... ) do
@@ -1079,9 +1262,11 @@ function ecs.newFilter( ... )
         if valueType == "string" then
             -- value is component
             table.insert( newFilter.requiredComponents, value )
+
         elseif valueType == "function" then
             -- value is type
             newFilter.type = value
+
         elseif valueType == "table" then
             -- value is subfilter
             newFilter.subfilters:append( value )
@@ -1096,21 +1281,10 @@ end
 -- System
 
 --- @class System
---- @field private filter Filter
+--- @field private __index table
 --- @field private isPre boolean
 local baseSystem = {}
-
-
---- @private
 baseSystem.__index = baseSystem
-
-
---- @package
---- @param entity table
---- @return boolean
-function baseSystem:tryEntity( entity )
-    return self.filter:filterEntity( entity )
-end
 
 
 --- @package
@@ -1120,13 +1294,12 @@ function baseSystem:getIsPre()
 end
 
 
---- @param filter Filter
 --- @param isPre boolean
-local function newSystem( filter, isPre )
+local function newSystem( isPre )
     local obj = {}
 
-    obj.filter = filter
     obj.isPre = isPre
+    obj.entities = teacher.makeList()
 
     setmetatable( obj, baseSystem )
 
@@ -1135,19 +1308,16 @@ end
 
 
 --- @class DrawSystem : System
+--- @field private __index table
 --- @field draw fun( entity : table )
 local baseDrawSystem = {}
+baseDrawSystem.__index = baseDrawSystem
 setmetatable( baseDrawSystem, baseSystem )
 
 
---- @private
-baseDrawSystem.__index = baseDrawSystem
-
-
---- @param filter Filter
 --- @return DrawSystem
-function ecs.newDrawSystem( filter, isPreDrawSystem )
-    local system = newSystem( filter, isPreDrawSystem )
+function dark.makeDrawSystem()
+    local system = newSystem( false )
     system.draw = function() end
 
     setmetatable( system, baseDrawSystem )
@@ -1157,20 +1327,17 @@ end
 
 
 --- @class UpdateSystem : System
+--- @field private __index table
 --- @field update fun( entity : table, deltaTime : number )
 local baseUpdateSystem = {}
+baseUpdateSystem.__index = baseUpdateSystem
 setmetatable( baseUpdateSystem, baseSystem )
 
 
---- @private
-baseUpdateSystem.__index = baseUpdateSystem
-
-
---- @param filter Filter
---- @param isPreUpdateSystem boolean If true, will execute BEFORE the scene.update function. If false it will execute AFTER.
+--- @param isPreUpdateSystem boolean? If true, will execute BEFORE the scene.update function. If false it will execute AFTER.
 --- @return UpdateSystem
-function ecs.newUpdateSystem( filter, isPreUpdateSystem )
-    local system = newSystem( filter, isPreUpdateSystem )
+function dark.makeUpdateSystem( isPreUpdateSystem )
+    local system = newSystem( isPreUpdateSystem or true )
     system.update = function() end
 
     setmetatable( system, baseUpdateSystem )
@@ -1181,14 +1348,14 @@ end
 --#endregion
 
 
---#region === SCENE MANAGER ===
+--#region === DIRECTOR ===
 
---- @class Pip.SceneManager
-_G.sceneManager = {}
+--- @class Pip.Director
+_G.director = {}
 
 
 --- @param newScene Scene
-function sceneManager.changeScene( newScene )
+function director.changeScene( newScene )
     if currentScene then
         currentScene.exit()
     end
@@ -1200,66 +1367,43 @@ end
 
 
 --- @package
-function sceneManager.update( deltaTime )
+function director.update( deltaTime )
     if not( currentScene ) then return end
 
     local preUpdateSystems, postUpdateSystems = currentScene:getPreUpdateSystems(), currentScene:getPostUpdateSystems()
-    local entities = currentScene:getEntities()
 
-    if preUpdateSystems:isEmpty() then goto skipPreUpdate end
-    for _, entity in ipairs( entities ) do
-        for _, system in ipairs( preUpdateSystems ) do
-            if system:tryEntity( entity ) then system.update( entity, deltaTime ) end
+    for system, filter in pairs( preUpdateSystems ) do
+        for entity in filter:getEntities():iterate() do
+            system.update( entity, deltaTime )
         end
     end
-    ::skipPreUpdate::
 
     currentScene.update( deltaTime )
 
-    if postUpdateSystems:isEmpty() then goto skipPostUpdate end
-    for _, entity in ipairs( entities ) do
-        for _, system in ipairs( postUpdateSystems ) do
-            if system:tryEntity( entity ) then system.update( entity, deltaTime ) end
+    for system, filter in pairs( postUpdateSystems ) do
+        for entity in filter:getEntities():iterate() do
+            system.update( entity, deltaTime )
         end
     end
-    ::skipPostUpdate::
-
-    currentScene:cleanup()
-end
-
-
-local function clearCanvas()
-    love.graphics.clear()
 end
 
 
 --- @package
-function sceneManager.draw()
+function director.draw()
     if not( currentScene ) then return end
 
-    local drawSystems = currentScene:getDrawSystems()
-    local entities = currentScene:getEntities()
-    local guiElements = currentScene:getDrawableGUIElements()
+    local drawSystems, drawCanvases = currentScene:getDrawSystems(), currentScene:getDrawCanvases()
 
-    if table.isEmpty( drawSystems ) then goto skipSystemDraw end
 
-    for _, canvas in pairs( drawSystems ) do
-        canvas:renderTo( clearCanvas )
-    end
 
-    for _, entity in ipairs( entities ) do
-        for system, canvas in pairs( drawSystems ) do
-            ---@diagnostic disable-next-line: redundant-parameter
-            if system:tryEntity( entity ) then canvas:renderTo( system.draw, entity ) end
+    for system, filter in pairs( drawSystems ) do
+        local canvas = drawCanvases[ system ]
+        love.graphics.setCanvas( canvas )
+        love.graphics.clear()
+
+        for entity in filter:getEntities():iterate() do
+            system.draw( entity )
         end
-    end
-
-    ::skipSystemDraw::
-
-    for element, canvas in pairs( guiElements ) do
-        canvas:renderTo( clearCanvas )
-        ---@diagnostic disable-next-line: redundant-parameter
-        canvas:renderTo( element.draw, element )
     end
 
     setMainCanvas()
@@ -1273,52 +1417,80 @@ end
 -- Scenes
 
 --- @class Scene
---- @field private drawSystems table< DrawSystem, love.Canvas >
---- @field private preUpdateSystems List< UpdateSystem >
---- @field private postUpdateSystems List< UpdateSystem >
---- @field private entities List< table >
---- @field private entityTrash List< table >
+--- @field private __index table
+--- @field private filters List< Filter >
+--- @field private drawSystems table< DrawSystem, Filter >
+--- @field private drawCanvases table< DrawSystem, love.Canvas >
+--- @field private preUpdateSystems table< UpdateSystem, Filter >
+--- @field private postUpdateSystems table< UpdateSystem, Filter >
+--- @field private entities SparseSet< table >
 --- @field private inputGUIElements List<GUI.Element>
---- @field private drawGUIElements table< DrawSystem, love.Canvas >
 --- @field enter fun()
 --- @field exit fun()
 --- @field update fun( deltaTime : number )
 --- @field draw fun()
 local baseScene = {}
-
-
---- @private
 baseScene.__index = baseScene
 
 
 --- @param entity table
 function baseScene:addEntity( entity )
     self.entities:append( entity )
+
+    for _, filter in ipairs( self.filters ) do
+        filter:addEntity( entity )
+    end
 end
 
 
---- @param canvas love.Canvas
-local function checkCanvasDimensions( canvas )
-    local width, height = canvas:getDimensions()
-    local error = "Canvas is the wrong size! It should be make using artist.makeScreenCanvas!"
-    assert( width == display.internalWidth and height == display.internalHeight, error )
+--- @param entity table
+function baseScene:eraseEntity( entity )
+    self.entities:erase( entity )
+
+    for _, filter in ipairs( self.filters ) do
+        filter:eraseEntity( entity )
+    end
+end
+
+
+--- @package
+--- @param entity table
+function baseScene:updateEntity( entity )
+    for _, filter in ipairs( self.filters ) do
+        filter:eraseEntity( entity )
+        filter:addEntity( entity )
+    end
+end
+
+
+--- @package
+--- @param filter Filter
+function baseScene:addFilter( filter )
+    if self.filters:has( filter ) then return end
+
+    for entity in self.entities:iterate() do
+        filter:addEntity( entity )
+    end
+
+    self.filters:append( filter )
 end
 
 
 --- @param system System
---- @param canvas love.Canvas?
-function baseScene:addSystem( system, canvas )
+--- @param filter Filter
+function baseScene:addSystem( system, filter )
     local metatable = getmetatable( system )
 
+    self:addFilter( filter )
+
     if metatable == baseDrawSystem then
-        assert( canvas, "You need a canvas with your draw system!" )
-        checkCanvasDimensions( canvas )
-        self.drawSystems[ system ] = canvas
+        self.drawSystems[ system ] = filter
+        self.drawCanvases[ system ] = artist.makeScreenCanvas()
     elseif metatable == baseUpdateSystem then
         if system:getIsPre() then
-            self.preUpdateSystems:append( system )
+            self.preUpdateSystems[ system ] = filter
         else
-            self.postUpdateSystems:append( system )
+            self.postUpdateSystems[ system ] = filter
         end
     end
 end
@@ -1328,8 +1500,7 @@ do
     local stack = teacher.makeList()
 
     --- @param element GUI.Element
-    --- @param canvas love.Canvas
-    function baseScene:addGUITree( element, canvas )
+    function baseScene:addGUITree( element )
         stack:clear()
         stack:append( element )
 
@@ -1338,9 +1509,9 @@ do
             element = stack:popBack()
 
             if not( element:getParent() ) then
-                checkCanvasDimensions( canvas )
-                self.drawGUIElements[ element ] = canvas
+                self:addEntity( element )
             end
+
             self.inputGUIElements:append( element )
 
             for _, child in ipairs( element:getChildren() ) do
@@ -1351,7 +1522,7 @@ do
 
 
     --- @param element GUI.Element
-    function baseScene:removeGUITree( element )
+    function baseScene:eraseGUITree( element )
         stack:clear()
         stack:append( element )
 
@@ -1359,8 +1530,11 @@ do
             --- @type GUI.Element
             element = stack:popBack()
 
-            self.drawGUIElements[ element ] = nil
             self.inputGUIElements:erase( element )
+
+            if not( element:getParent() ) then
+                self:eraseEntity( element )
+            end
 
             for _, child in ipairs( element:getChildren() ) do
                 stack:append( child )
@@ -1378,20 +1552,11 @@ function baseScene:getInputActiveGUIElements()
 end
 
 
-
---- @package
---- @return table< DrawSystem, love.Canvas >
-function baseScene:getDrawableGUIElements()
-    return self.drawGUIElements
-end
-
-
 --- @package
 --- @return List< table >
 function baseScene:getEntities()
     return self.entities
 end
-
 
 
 --- @package
@@ -1420,57 +1585,52 @@ function baseScene:mouseReleased( button )
 end
 
 
---- @param entity table
---- Will be deleted at the end of the frame
-function baseScene:deleteEntity( entity )
-    self.entityTrash:append( entity )
-end
-
-
 --- @package
-function baseScene:cleanup()
-    if self.entityTrash:isEmpty() then return end
-
-    for _, entity in ipairs( self.entityTrash ) do
-        self.entities:erase( entity )
-    end
-
-    self.entityTrash:clear()
-end
-
-
---- @package
---- @return List< UpdateSystem >
+--- @return table< UpdateSystem, Filter >
 function baseScene:getPreUpdateSystems()
     return self.preUpdateSystems
 end
 
 
 --- @package
---- @return table< DrawSystem, love.Canvas>
+--- @return table< DrawSystem, love.Canvas >
+function baseScene:getDrawCanvases()
+    return self.drawCanvases
+end
+
+
+--- @package
+--- @return SparseSet< Filter >
+function baseScene:getFilters()
+    return self.filters
+end
+
+
+--- @package
+--- @return table< DrawSystem, Filter >
 function baseScene:getDrawSystems()
     return self.drawSystems
 end
 
 
 --- @package
---- @return List< UpdateSystem >
+--- @return table< UpdateSystem, Filter >
 function baseScene:getPostUpdateSystems()
     return self.postUpdateSystems
 end
 
 
 --- @return Scene
-function sceneManager.newScene()
+function director.makeScene()
     local object = {}
 
+    object.filters = teacher.makeList()
     object.drawSystems = {}
-    object.preUpdateSystems = teacher.makeList()
-    object.postUpdateSystems = teacher.makeList()
-    object.entities = teacher.makeList()
-    object.entityTrash = teacher.makeList()
+    object.drawCanvases = {}
+    object.preUpdateSystems = {}
+    object.postUpdateSystems = {}
+    object.entities = teacher.makeSparseSet()
     object.inputGUIElements = teacher.makeList()
-    object.drawGUIElements = {}
 
     object.enter = function () end
     object.exit = function () end
@@ -1486,10 +1646,10 @@ end
 --#endregion
 
 
---#region === GUI ===
+--#region === GOOEY GUI ===
 
---- @class Pip.GUI
-_G.gui = {}
+--- @class Pip.Gooey
+_G.gooey = {}
 
 
 --- @alias GUI.Dimension "internalWidth" | "internalHeight"
@@ -1504,6 +1664,7 @@ local elementStack = teacher.makeList()
 
 
 --- @class GUI.Element
+--- @field private __index table
 ---
 --- In setup, user interfaces when making element
 --- @field private width GUI.SizeMode
@@ -1534,8 +1695,8 @@ local elementStack = teacher.makeList()
 --- @field private shadowOffsetX number
 --- @field private shadowOffsetY number
 --- @field private shadowColor Color
---- @field rotation number
 --- @field private mouseButton MouseButton
+--- @field rotation number
 --- @field mouseEntered fun( element : GUI.Element )
 --- @field mouseExited fun( element : GUI.Element )
 --- @field mousePressed fun( element : GUI.Element )
@@ -1560,7 +1721,6 @@ local elementStack = teacher.makeList()
 --- @field private mouseInElement boolean
 ---
 local element = {}
---- @private
 element.__index = element
 
 
@@ -1583,7 +1743,7 @@ local defaults = {
     shadowOffsetX = 0, shadowOffsetY = 0,
     shadowColor = artist.mixPaint( 0, 0, 0, 128 ),
     scale = 1, rotation = 0,
-    mouseButton = input.mouseButton.left,
+    mouseButton = captain.mouseButton.left,
     visible = true,
     inputActive = false,
 
@@ -1593,6 +1753,7 @@ local defaults = {
     userSetMinWidth = false, userSetMinHeight = false,
     drawShadow = false, drawTextShadow = false,
     mouseInElement = false,
+    gui = true, -- For use in systems
 }
 defaults.__index = defaults
 setmetatable( element, defaults )
@@ -1600,7 +1761,7 @@ setmetatable( element, defaults )
 
 --- @param slime GUI.Setup
 --- @return GUI.Element
-function gui.newSlime( slime )
+function gooey.makeSlime( slime )
     setmetatable( slime, element )
     --- @cast slime GUI.Element
     slime:init()
@@ -1712,7 +1873,7 @@ function element:addChild( child )
 end
 
 
-function gui.gatherSlimelets()
+function gooey.gatherSlimelets()
     assert( not( elementStack:isEmpty() ) )
 
     --- @type GUI.Element
@@ -2300,21 +2461,21 @@ local callbacks = {}
 --- @param width integer
 --- @param height integer
 function callbacks.resize( width, height )
-    display.windowWidth, display.windowHeight = width, height
+    stage.windowWidth, stage.windowHeight = width, height
 
-    scale = min( width / display.internalWidth, height / display.internalHeight )
+    scale = min( width / stage.internalWidth, height / stage.internalHeight )
 
     if forcePixelPerfectScaling then
         scale = math.floor( scale )
     end
 
-    translateX = ( width - display.internalWidth * scale ) * 0.5
-    translateY = ( height - display.internalHeight * scale ) * 0.5
+    translateX = ( width - stage.internalWidth * scale ) * 0.5
+    translateY = ( height - stage.internalHeight * scale ) * 0.5
 
     local x, y = love.mouse.getPosition()
 
-    mouseX = math.clamp( math.floor( ( x - translateX ) / scale + 0.5 ), 0, display.internalWidth )
-    mouseY = math.clamp( math.floor( ( y - translateY ) / scale + 0.5 ), 0, display.internalHeight )
+    mouseX = math.clamp( math.floor( ( x - translateX ) / scale + 0.5 ), 0, stage.internalWidth )
+    mouseY = math.clamp( math.floor( ( y - translateY ) / scale + 0.5 ), 0, stage.internalHeight )
 
     if currentScene then currentScene:mouseMoved() end
 end
@@ -2348,8 +2509,8 @@ end
 
 
 function callbacks.mousemoved( x, y )
-    mouseX = math.clamp( math.floor( ( x - translateX ) / scale + 0.5 ), 0, display.internalWidth )
-    mouseY = math.clamp( math.floor( ( y - translateY ) / scale + 0.5 ), 0, display.internalHeight )
+    mouseX = math.floor( ( x - translateX ) / scale + 0.5 )
+    mouseY = math.floor( ( y - translateY ) / scale + 0.5 )
 
     if currentScene then currentScene:mouseMoved() end
 end
@@ -2393,15 +2554,15 @@ function love.run()
 
         deltaTime = love.timer.step()
 
-        sceneManager.update( deltaTime )
+        director.update( deltaTime )
 
         resetKeysJustPressed()
         resetMouseButtonsPressed()
 
         love.graphics.origin()
-        love.graphics.clear( love.graphics.getBackgroundColor() )
+        love.graphics.clear()
 
-        sceneManager.draw()
+        director.draw()
 
         love.graphics.present()
 
@@ -2415,3 +2576,4 @@ setInternalDimensions( 800, 600 )
 callbacks.resize( 800, 600 )
 
 --#endregion
+
