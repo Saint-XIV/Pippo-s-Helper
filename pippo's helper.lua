@@ -201,18 +201,18 @@ end
 --- @field private __index table
 --- @field private first number
 --- @field private last number
-local queue = {}
-queue.__index = queue
+local baseQueue = {}
+baseQueue.__index = baseQueue
 
 
 --- @return Queue
 function teacher.makeQueue()
-    return setmetatable( { first = 0, last = -1 }, queue )
+    return setmetatable( { first = 0, last = -1 }, baseQueue )
 end
 
 
 --- @param thing any
-function queue:enqueue( thing )
+function baseQueue:enqueue( thing )
     local last = self.last + 1
     self.last = last
     self[ last ] = thing
@@ -220,7 +220,7 @@ end
 
 
 --- @return any
-function queue:next()
+function baseQueue:next()
     local first = self.first
     local value = self[ first ]
 
@@ -231,7 +231,7 @@ function queue:next()
 end
 
 
-function queue:clear()
+function baseQueue:clear()
     for index, _ in ipairs( self ) do
         self[ index ] = nil
     end
@@ -241,7 +241,7 @@ end
 
 
 --- @return boolean
-function queue:isEmpty()
+function baseQueue:isEmpty()
     return self.first > self.last
 end
 
@@ -278,14 +278,14 @@ end
 --- @param value any
 function basesparseSet:erase( value )
     local sparse, dense = self.sparse, self.dense
-    local index, backOfDense = sparse[ value ], dense[ #dense ]
+    local index = sparse[ value ]
 
     if not( index ) then return end
 
-    dense[ index ] = backOfDense
-    sparse[ backOfDense ] = index
+    dense[ index ] = dense[ #dense ]
+    sparse[ dense[ #dense ] ] = index
 
-    dense[ #dense ] = nil
+    table.remove( dense, #dense )
     sparse[ value ] = nil
 end
 
@@ -311,6 +311,21 @@ end
 --- @return integer
 function basesparseSet:length()
     return #self.dense
+end
+
+
+--- @return string
+--- @private
+function basesparseSet:__tostring()
+    local s = "["
+
+    for _, item in ipairs( self.dense ) do
+        s = s..tostring( item )..", "
+    end
+
+    s = s.."]"
+
+    return s
 end
 
 
@@ -535,6 +550,35 @@ function artist.paintDrawSystem( drawSystem )
 end
 
 
+--- @param mode love.DrawMode
+--- @param x number
+--- @param y number
+--- @param outerRadius number
+--- @param innerRadius number
+--- @param color Color?
+--- @param lineWidth number?
+function artist.paintDonut( mode, x, y, outerRadius, innerRadius, color, lineWidth )
+    love.graphics.push( "all" )
+
+    setColor( color )
+    setLineWidth( lineWidth )
+
+    if mode == "fill" then
+        love.graphics.stencil( function ()
+            love.graphics.circle( "fill", x, y, innerRadius )
+        end, "replace", 1 )
+
+        love.graphics.setStencilTest( "less", 1 )
+        love.graphics.circle( "fill", x, y, outerRadius )
+    else
+        love.graphics.circle( "line", x, y, outerRadius )
+        love.graphics.circle( "line", x, y, innerRadius )
+    end
+
+    love.graphics.pop()
+end
+
+
 -- Spritesheet
 
 --- @class SpriteSheet
@@ -691,7 +735,24 @@ function writer.makeFont( sizeStep, path, hintingMode )
 end
 
 
-local defualtFont = writer.makeFont( 12 )
+-- Text input
+local textThisFrame = ""
+local backspace = false
+local utf8 = require "utf8"
+
+
+function writer.type( s )
+    s = s..textThisFrame
+
+    if not( backspace ) then return s end
+
+    local offset = utf8.offset( s, -1 )
+
+    if not( offset ) then return s end
+
+    s = s:sub( 1, offset - 1 )
+    return s
+end
 
 
 --#endregion
@@ -1004,64 +1065,6 @@ math.halfpi = math.pi * 0.5
 --#endregion
 
 
---#region === CAPTAIN ===
-
---- @class Pip.Captain
-_G.captain = {}
-
-
---- @enum MouseButton
-captain.mouseButton = {
-    left = 1,
-    right = 2,
-    middle = 3
-}
-
-
-local keysDown = teacher.makeList()
-local keysJustPressed = teacher.makeList()
-local mouseButtonsDown = teacher.makeList()
-local mouseButtonsJustPressed = teacher.makeList()
-local mouseX, mouseY = 0, 0
-
-
---- @param key love.KeyConstant
---- @return boolean
-function captain.isKeyDown( key )
-    return keysDown:has( key )
-end
-
-
---- @param key love.KeyConstant
---- @return boolean
-function captain.isKeyJustPressed( key )
-    return keysJustPressed:has( key )
-end
-
-
---- @param button MouseButton
---- @return boolean
-function captain.isMouseButtonDown( button )
-    return mouseButtonsDown:has( button )
-end
-
-
---- @param button MouseButton
---- @return boolean
-function captain.isMouseButtonJustPressed( button )
-    return mouseButtonsJustPressed:has( button )
-end
-
-
---- @return number, number
-function captain.getMousePosition()
-    return mouseX, mouseY
-end
-
-
---#endregion
-
-
 --#region === STAGE ===
 
 --- @class Pip.Stage
@@ -1127,6 +1130,64 @@ local function drawMainCanvas()
 
     love.graphics.draw( mainCanvas )
 end
+
+--#endregion
+
+
+--#region === CAPTAIN ===
+
+--- @class Pip.Captain
+_G.captain = {}
+
+
+--- @enum MouseButton
+captain.mouseButton = {
+    left = 1,
+    right = 2,
+    middle = 3
+}
+
+
+local keysDown = teacher.makeList()
+local keysJustPressed = teacher.makeList()
+local mouseButtonsDown = teacher.makeList()
+local mouseButtonsJustPressed = teacher.makeList()
+local mouseScreenX, mouseScreenY = 0, 0
+
+
+--- @param key love.KeyConstant
+--- @return boolean
+function captain.isKeyDown( key )
+    return keysDown:has( key )
+end
+
+
+--- @param key love.KeyConstant
+--- @return boolean
+function captain.isKeyJustPressed( key )
+    return keysJustPressed:has( key )
+end
+
+
+--- @param button MouseButton
+--- @return boolean
+function captain.isMouseButtonDown( button )
+    return mouseButtonsDown:has( button )
+end
+
+
+--- @param button MouseButton
+--- @return boolean
+function captain.isMouseButtonJustPressed( button )
+    return mouseButtonsJustPressed:has( button )
+end
+
+
+--- @return number, number
+function captain.getMousePosition()
+    return mouseScreenX, mouseScreenY
+end
+
 
 --#endregion
 
@@ -1388,17 +1449,18 @@ function director.update( deltaTime )
 end
 
 
+local setCanvasSetup = { stencil = true }
+
 --- @package
 function director.draw()
     if not( currentScene ) then return end
 
     local drawSystems, drawCanvases = currentScene:getDrawSystems(), currentScene:getDrawCanvases()
 
-
-
     for system, filter in pairs( drawSystems ) do
         local canvas = drawCanvases[ system ]
-        love.graphics.setCanvas( canvas )
+        setCanvasSetup[ 1 ] = canvas
+        love.graphics.setCanvas( setCanvasSetup )
         love.graphics.clear()
 
         for entity in filter:getEntities():iterate() do
@@ -1499,6 +1561,7 @@ end
 do
     local stack = teacher.makeList()
 
+    --- For automatic input handling, assumes no transforms for GUI
     --- @param element GUI.Element
     function baseScene:addGUITree( element )
         stack:clear()
@@ -1562,7 +1625,7 @@ end
 --- @package
 function baseScene:mouseMoved()
     for _, element in ipairs( self.inputGUIElements ) do
-        if element.inputActive then element:mouseMoved( mouseX, mouseY ) end
+        if element.inputActive then element:mouseMoved( captain.getMousePosition() ) end
     end
 end
 
@@ -1673,18 +1736,15 @@ local elementStack = teacher.makeList()
 --- @field private minHeight number
 --- @field private maxWidth number
 --- @field private maxHeight number
---- @field private x number
---- @field private y number
 --- @field private layoutDirection GUI.LayoutDirection
---- @field private horizontalAlign GUI.HorizontalAlign
---- @field private verticalAlign GUI.VerticalAlign
+--- @field package horizontalAlign GUI.HorizontalAlign
+--- @field package verticalAlign GUI.VerticalAlign
 --- @field private childSpacing number
 --- @field private paddingAll number
 --- @field private paddingTop number
 --- @field private paddingLeft number
 --- @field private paddingBottom number
 --- @field private paddingRight number
---- @field private text string?
 --- @field private textHorizontalAlign love.AlignMode
 --- @field private textVerticalAlign GUI.VerticalAlign
 --- @field private textShadowOffsetX number
@@ -1696,6 +1756,8 @@ local elementStack = teacher.makeList()
 --- @field private shadowOffsetY number
 --- @field private shadowColor Color
 --- @field private mouseButton MouseButton
+--- @field x number
+--- @field y number
 --- @field rotation number
 --- @field mouseEntered fun( element : GUI.Element )
 --- @field mouseExited fun( element : GUI.Element )
@@ -1706,6 +1768,7 @@ local elementStack = teacher.makeList()
 --- @field scale number
 --- @field visible boolean
 --- @field inputActive boolean
+--- @field text string?
 ---
 --- For internal use
 --- @field private parent GUI.Element?
@@ -1719,9 +1782,9 @@ local elementStack = teacher.makeList()
 --- @field private drawShadow boolean
 --- @field private drawTextShadow boolean
 --- @field private mouseInElement boolean
+--- @field package data table
 ---
 local element = {}
-element.__index = element
 
 
 local defaults = {
@@ -1753,26 +1816,60 @@ local defaults = {
     userSetMinWidth = false, userSetMinHeight = false,
     drawShadow = false, drawTextShadow = false,
     mouseInElement = false,
-    gui = true, -- For use in systems
 }
-defaults.__index = defaults
-setmetatable( element, defaults )
+
+
+--- @type table< string, fun( slime : GUI.Element, key : string, value : any ) >
+local setters = {}
+
+setters.text = function ( slime, key, value )
+    slime.data[ key ] = value
+    slime:recloseTree()
+end
+
+setters.x = function ( slime, key, value )
+    slime.data[ key ] = value
+    slime:setPosition( "x", "internalWidth", slime.horizontalAlign )
+end
+
+setters.y = function ( slime, key, value )
+    slime.data[ key ] = value
+    slime:setPosition( "y", "internalHeight", slime.verticalAlign )
+end
+
+
+local proxyMT = {
+    __index = function ( self, key )
+        if self.data[ key ] then return self.data[ key ] end
+        if defaults[ key ] then return defaults[ key ] end
+
+        return element[ key ]
+    end,
+
+    __newindex = function ( self, key, value )
+        local setter = setters[ key ]
+        if setter then setter( self, key, value ) return end
+        self.data[ key ] = value
+    end
+}
 
 
 --- @param slime GUI.Setup
 --- @return GUI.Element
 function gooey.makeSlime( slime )
-    setmetatable( slime, element )
+    local proxy = { data = slime }
+    setmetatable( proxy, proxyMT )
+
     --- @cast slime GUI.Element
-    slime:init()
+    proxy:init()
 
     if not( elementStack:isEmpty() ) then
         local parent = elementStack:back()
-        parent:addChild( slime )
+        parent:addChild( proxy )
     end
 
-    elementStack:append( slime )
-    return slime
+    elementStack:append( proxy )
+    return proxy
 end
 
 
@@ -1824,7 +1921,7 @@ end
 
 -- Setup Functions
 
---- @private
+--- @package
 function element:setupText()
     local text = self.text
 
@@ -1848,10 +1945,8 @@ function element:setupTextWidth( text, font )
         widest = max( widest, font:getWidth( word ) )
     end
 
-    if not( self.userSetMinWidth ) then
-        self.minWidth = widest + padding
-        self.internalWidth = self.minWidth
-    end
+    self.minWidth = max( self.minWidth, widest + padding )
+    self.internalWidth = min( self.minWidth, self.maxWidth )
 end
 
 
@@ -1859,7 +1954,7 @@ end
 --- @param font love.Font
 function element:setupTextHeight( font )
     local padding = self.verticalPadding
-    if not( self.userSetMinHeight ) then self.minHeight = font:getHeight() + padding end
+    self.minHeight = max( self.minHeight, font:getHeight() + padding )
 end
 
 
@@ -1890,7 +1985,7 @@ function element:close()
     self:fit( "internalWidth" )
     self:tryExpandAndShrink( "internalWidth" )
 
-    self:wrapText()
+    self:fitToText()
 
     self:fit( "internalHeight" )
     self:tryExpandAndShrink( "internalHeight" )
@@ -1902,24 +1997,64 @@ function element:close()
 end
 
 
+--- @package
+--- @return GUI.Element
+function element:findTopOfTree()
+    if not( self.parent ) then return self end
+    return self.parent:findTopOfTree()
+end
+
+
+--- @package
+function element:doReclose()
+    if self.width == "fit" then
+        self.internalWidth = 0
+        if not( self.userSetMinWidth ) then
+            self.minWidth = 0
+        end
+    end
+    if self.height == "fit" then
+        self.internalHeight = 0
+        if not( self.userSetMinHeight ) then
+            self.minHeight = 0
+        end
+    end
+
+    self:setupText()
+
+    for _, child in ipairs( self.children ) do
+        child:doReclose()
+    end
+
+    self:close()
+end
+
+
+--- @package
+function element:recloseTree()
+    local top = self:findTopOfTree()
+    top:doReclose()
+end
+
+
 do
 
-local elementQueue = teacher.makeQueue()
+local queue = teacher.makeQueue()
 
 --- @private
 --- @param dimension GUI.Dimension
 function element:tryExpandAndShrink( dimension )
     if self.parent then return end
 
-    elementQueue:clear()
-    elementQueue:enqueue( self )
+    queue:clear()
+    queue:enqueue( self )
 
-    while not( elementQueue:isEmpty() ) do
+    while not( queue:isEmpty() ) do
         --- @type GUI.Element
-        local current = elementQueue:next()
+        local current = queue:next()
 
         for _, child in ipairs( current.children ) do
-            elementQueue:enqueue( child )
+            queue:enqueue( child )
         end
 
         current:expandAndShrink( dimension )
@@ -1955,7 +2090,9 @@ end
 function element:getAlongAxis( dimension )
     if dimension == "internalWidth" and self.layoutDirection == "leftToRight" then
         return true
-    elseif dimension == "internalHeight" and self.layoutDirection == "topToBottom" then
+    end
+
+    if dimension == "internalHeight" and self.layoutDirection == "topToBottom" then
         return true
     end
 
@@ -2147,30 +2284,6 @@ end
 end
 
 
-do
-local elementQueue = teacher.makeQueue()
-
---- @package
-function element:wrapText()
-    if self.parent then return end
-
-    elementQueue:clear()
-    elementQueue:enqueue( self )
-
-    while not( elementQueue:isEmpty() ) do
-        --- @type GUI.Element
-        local current = elementQueue:next()
-
-        for _, child in ipairs( current.children ) do
-            elementQueue:enqueue( child )
-        end
-
-        current:fitToText()
-    end
-end
-end
-
-
 --- @package
 function element:fitToText()
     if not( self.text ) then return end
@@ -2178,10 +2291,8 @@ function element:fitToText()
 
     local font = self.font
     local _, lines = font:getWrap( self.text, self.internalWidth - self.horizontalPadding )
-    if not( self.userSetMinHeight ) then
-        self.minHeight = #lines * font:getHeight() + self.verticalPadding
-        self.internalHeight = self.minHeight
-    end
+    self.minHeight = max( #lines * font:getHeight() + self.verticalPadding, self.minHeight )
+    self.internalHeight = min( self.minHeight, self.maxHeight )
 end
 
 
@@ -2233,7 +2344,7 @@ local function getJustify( alignment )
 end
 
 
---- @private
+--- @package
 --- @param axis GUI.Axis
 --- @param dimension GUI.Dimension
 --- @param alignment GUI.HorizontalAlign | GUI.VerticalAlign
@@ -2344,22 +2455,21 @@ end
 -- Draw
 
 do
-    local elementQueue = teacher.makeQueue()
+    local queue = teacher.makeQueue()
 
-    --- @package
     function element:draw()
         if not( self.visible ) then return end
 
-        elementQueue:clear()
-        elementQueue:enqueue( self )
+        queue:clear()
+        queue:enqueue( self )
 
-        while not( elementQueue:isEmpty() ) do
+        while not( queue:isEmpty() ) do
             --- @type GUI.Element
-            local current = elementQueue:next()
+            local current = queue:next()
 
             if current.visible then
                 for _, child in ipairs( current.children ) do
-                    elementQueue:enqueue( child )
+                    queue:enqueue( child )
                 end
 
                 current:drawSelf()
@@ -2474,8 +2584,8 @@ function callbacks.resize( width, height )
 
     local x, y = love.mouse.getPosition()
 
-    mouseX = math.clamp( math.floor( ( x - translateX ) / scale + 0.5 ), 0, stage.internalWidth )
-    mouseY = math.clamp( math.floor( ( y - translateY ) / scale + 0.5 ), 0, stage.internalHeight )
+    mouseScreenX = math.clamp( math.floor( ( x - translateX ) / scale + 0.5 ), 0, stage.internalWidth )
+    mouseScreenY = math.clamp( math.floor( ( y - translateY ) / scale + 0.5 ), 0, stage.internalHeight )
 
     if currentScene then currentScene:mouseMoved() end
 end
@@ -2485,6 +2595,8 @@ end
 function callbacks.keypressed( key )
     keysDown:append( key )
     keysJustPressed:append( key )
+
+    backspace = key == "backspace"
 end
 
 
@@ -2509,10 +2621,15 @@ end
 
 
 function callbacks.mousemoved( x, y )
-    mouseX = math.floor( ( x - translateX ) / scale + 0.5 )
-    mouseY = math.floor( ( y - translateY ) / scale + 0.5 )
+    mouseScreenX = math.floor( ( x - translateX ) / scale + 0.5 )
+    mouseScreenY = math.floor( ( y - translateY ) / scale + 0.5 )
 
     if currentScene then currentScene:mouseMoved() end
+end
+
+
+function callbacks.textinput( t )
+    textThisFrame = t
 end
 
 
@@ -2565,6 +2682,9 @@ function love.run()
         director.draw()
 
         love.graphics.present()
+
+        backspace = false
+        textThisFrame = ""
 
         love.timer.sleep( 0.001 )
     end
