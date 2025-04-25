@@ -675,66 +675,6 @@ end
 _G.writer = {}
 
 
---- @class Font
---- @field private __index table
---- @field private path string?
---- @field private sizeStep number?
---- @field private sizes table<number, love.Font>
---- @field private hinting love.HintingMode
-local customFont = {}
-customFont.__index = customFont
-
-
---- @package
-function customFont:initSizes()
-    local sizeStep = self.sizeStep
-    local path = self.path
-    for size = sizeStep, sizeStep * 8, sizeStep do
-        self:makeFont( size, path )
-    end
-end
-
-
---- @package
---- @param path string?
---- @param size number
-function customFont:makeFont( size, path )
-    local font
-
-    if path then
-        font = love.graphics.newFont( path, size, self.hinting )
-    else
-        font = love.graphics.newFont( size, self.hinting )
-    end
-
-    self.sizes[ size ] = font
-end
-
-
---- @param size number
---- @return love.Font
-function customFont:getFont( size )
-    local font = self.sizes[ size ]
-    if font then return font end
-
-    self:makeFont( size, self.path )
-    return self.sizes[ size ]
-end
-
-
---- @param path string?
---- @param sizeStep number
---- @param hintingMode love.HintingMode?
---- @return Font
-function writer.makeFont( sizeStep, path, hintingMode )
-    local obj = { path = path, sizes = {}, sizeStep = sizeStep, hintingMode = hintingMode }
-    if not( hintingMode ) then obj.hintingMode = "normal" end
-    setmetatable( obj, customFont )
-    obj:initSizes()
-    return obj
-end
-
-
 -- Text input
 local textThisFrame = ""
 local backspace = false
@@ -1745,6 +1685,7 @@ local elementStack = teacher.makeList()
 --- @field private paddingLeft number
 --- @field private paddingBottom number
 --- @field private paddingRight number
+--- @field package text string?
 --- @field private textHorizontalAlign love.AlignMode
 --- @field private textVerticalAlign GUI.VerticalAlign
 --- @field private textShadowOffsetX number
@@ -1768,11 +1709,10 @@ local elementStack = teacher.makeList()
 --- @field scale number
 --- @field visible boolean
 --- @field inputActive boolean
---- @field text string?
 ---
 --- For internal use
---- @field private parent GUI.Element?
---- @field private children List<GUI.Element>
+--- @field package parent GUI.Element?
+--- @field package children List<GUI.Element>
 --- @field private internalWidth number
 --- @field private internalHeight number
 --- @field private horizontalPadding number
@@ -1785,6 +1725,7 @@ local elementStack = teacher.makeList()
 --- @field package data table
 ---
 local element = {}
+element.__index = element
 
 
 local defaults = {
@@ -1817,20 +1758,19 @@ local defaults = {
     drawShadow = false, drawTextShadow = false,
     mouseInElement = false,
 }
+defaults.__index = defaults
+setmetatable( element, defaults )
 
 
 --- @type table< string, fun( slime : GUI.Element, key : string, value : any ) >
 local setters = {}
 
-setters.text = function ( slime, key, value )
-    slime.data[ key ] = value
-    slime:recloseTree()
-end
 
 setters.x = function ( slime, key, value )
     slime.data[ key ] = value
     slime:setPosition( "x", "internalWidth", slime.horizontalAlign )
 end
+
 
 setters.y = function ( slime, key, value )
     slime.data[ key ] = value
@@ -1840,7 +1780,7 @@ end
 
 local proxyMT = {
     __index = function ( self, key )
-        if self.data[ key ] then return self.data[ key ] end
+        if self.data[ key ] ~= nil then return self.data[ key ] end
         if defaults[ key ] then return defaults[ key ] end
 
         return element[ key ]
@@ -1857,27 +1797,29 @@ local proxyMT = {
 --- @param slime GUI.Setup
 --- @return GUI.Element
 function gooey.makeSlime( slime )
-    local proxy = { data = slime }
-    setmetatable( proxy, proxyMT )
+    --- @cast slime GUI.Element()
+    slime.parent = nil
+    slime.children = teacher.makeList()
 
-    --- @cast slime GUI.Element
-    proxy:init()
+    setmetatable( slime, element )
+
+    slime:init()
 
     if not( elementStack:isEmpty() ) then
         local parent = elementStack:back()
-        parent:addChild( proxy )
+        parent:addChild( slime )
     end
 
-    elementStack:append( proxy )
+    elementStack:append( slime )
+
+    local proxy = setmetatable( { data = slime }, proxyMT )
+
     return proxy
 end
 
 
 --- @package
 function element:init()
-    self.parent = nil
-    self.children = teacher.makeList()
-
     local width = self.width
     if type( width ) == "number" then self.internalWidth = width end
 
@@ -1939,13 +1881,12 @@ end
 --- @param font love.Font
 function element:setupTextWidth( text, font )
     local widest = 0
-    local padding = self.horizontalPadding
 
     for word in string.gmatch( text, "%S+" ) do
         widest = max( widest, font:getWidth( word ) )
     end
 
-    self.minWidth = max( self.minWidth, widest + padding )
+    self.minWidth = max( self.minWidth, widest )
     self.internalWidth = min( self.minWidth, self.maxWidth )
 end
 
@@ -1985,7 +1926,7 @@ function element:close()
     self:fit( "internalWidth" )
     self:tryExpandAndShrink( "internalWidth" )
 
-    self:fitToText()
+    self:tryFitToText()
 
     self:fit( "internalHeight" )
     self:tryExpandAndShrink( "internalHeight" )
@@ -1994,46 +1935,6 @@ function element:close()
 
     self:setPosition( "x", "internalWidth", horizontalAlign )
     self:setPosition( "y", "internalHeight", verticalAlign )
-end
-
-
---- @package
---- @return GUI.Element
-function element:findTopOfTree()
-    if not( self.parent ) then return self end
-    return self.parent:findTopOfTree()
-end
-
-
---- @package
-function element:doReclose()
-    if self.width == "fit" then
-        self.internalWidth = 0
-        if not( self.userSetMinWidth ) then
-            self.minWidth = 0
-        end
-    end
-    if self.height == "fit" then
-        self.internalHeight = 0
-        if not( self.userSetMinHeight ) then
-            self.minHeight = 0
-        end
-    end
-
-    self:setupText()
-
-    for _, child in ipairs( self.children ) do
-        child:doReclose()
-    end
-
-    self:close()
-end
-
-
---- @package
-function element:recloseTree()
-    local top = self:findTopOfTree()
-    top:doReclose()
 end
 
 
@@ -2284,6 +2185,29 @@ end
 end
 
 
+do
+    local queue = teacher.makeQueue()
+
+    --- @package
+    function element:tryFitToText()
+        if self.parent then return end
+
+        queue:clear()
+        queue:enqueue( self )
+
+        while not( queue:isEmpty() ) do
+            local current = queue:next()
+
+            current:fitToText()
+
+            for _, child in ipairs( current.children ) do
+                queue:enqueue( child )
+            end
+        end
+    end
+end
+
+
 --- @package
 function element:fitToText()
     if not( self.text ) then return end
@@ -2291,8 +2215,17 @@ function element:fitToText()
 
     local font = self.font
     local _, lines = font:getWrap( self.text, self.internalWidth - self.horizontalPadding )
-    self.minHeight = max( #lines * font:getHeight() + self.verticalPadding, self.minHeight )
+    local height = font:getHeight()
+
+    self.minHeight = max( #lines * height + self.verticalPadding, self.minHeight )
     self.internalHeight = min( self.minHeight, self.maxHeight )
+
+    local parent = self.parent
+
+    if not( parent ) then return end
+    if not( parent.height == "fit" ) then return end
+
+    parent.internalHeight = parent.internalHeight + ( #lines - 1 ) * font:getHeight()
 end
 
 
