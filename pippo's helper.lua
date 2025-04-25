@@ -779,6 +779,8 @@ function spring:update( deltaTime )
     self.velocity = velocity + acceleration * deltaTime
     self.value = value + self.velocity * deltaTime
 
+    if math.abs( self.value - self.target ) < 0.001 then self.value = self.target end
+
     if self.setter then self.setter( self.value ) end
 end
 
@@ -1498,93 +1500,10 @@ function baseScene:addSystem( system, filter )
 end
 
 
-do
-    local stack = teacher.makeList()
-
-    --- For automatic input handling, assumes no transforms for GUI
-    --- @param element GUI.Element
-    function baseScene:addGUITree( element )
-        stack:clear()
-        stack:append( element )
-
-        while not( stack:isEmpty() ) do
-            --- @type GUI.Element
-            element = stack:popBack()
-
-            if not( element:getParent() ) then
-                self:addEntity( element )
-            end
-
-            self.inputGUIElements:append( element )
-
-            for _, child in ipairs( element:getChildren() ) do
-                stack:append( child )
-            end
-        end
-    end
-
-
-    --- @param element GUI.Element
-    function baseScene:eraseGUITree( element )
-        stack:clear()
-        stack:append( element )
-
-        while not( stack:isEmpty() ) do
-            --- @type GUI.Element
-            element = stack:popBack()
-
-            self.inputGUIElements:erase( element )
-
-            if not( element:getParent() ) then
-                self:eraseEntity( element )
-            end
-
-            for _, child in ipairs( element:getChildren() ) do
-                stack:append( child )
-            end
-        end
-    end
-
-end
-
-
---- @package
---- @return List<GUI.Element>
-function baseScene:getInputActiveGUIElements()
-    return self.inputGUIElements
-end
-
-
 --- @package
 --- @return List< table >
 function baseScene:getEntities()
     return self.entities
-end
-
-
---- @package
-function baseScene:mouseMoved()
-    for _, element in ipairs( self.inputGUIElements ) do
-        if element.inputActive then element:mouseMoved( captain.getMousePosition() ) end
-    end
-end
-
-
---- @package
---- @param button MouseButton
-function baseScene:mouseClicked( button )
-    for _, element in ipairs( self.inputGUIElements ) do
-        if element.inputActive then element:mouseButtonClicked( button ) end
-    end
-end
-
-
---- @package
---- @param button MouseButton
-function baseScene:mouseReleased( button )
-    for _, element in ipairs( self.inputGUIElements ) do
-        if element.inputActive then element:mouseButtonReleased( button ) end
-    end
 end
 
 
@@ -1722,6 +1641,7 @@ local elementStack = teacher.makeList()
 --- @field private drawShadow boolean
 --- @field private drawTextShadow boolean
 --- @field private mouseInElement boolean
+--- @field private mouseDownOnElement boolean
 --- @field package data table
 ---
 local element = {}
@@ -1756,7 +1676,7 @@ local defaults = {
     minWidth = 0, minHeight = 0,
     userSetMinWidth = false, userSetMinHeight = false,
     drawShadow = false, drawTextShadow = false,
-    mouseInElement = false,
+    mouseInElement = false, mouseDownOnElement = false
 }
 defaults.__index = defaults
 setmetatable( element, defaults )
@@ -1781,7 +1701,7 @@ end
 local proxyMT = {
     __index = function ( self, key )
         if self.data[ key ] ~= nil then return self.data[ key ] end
-        if defaults[ key ] then return defaults[ key ] end
+        if defaults[ key ] ~= nil then return defaults[ key ] end
 
         return element[ key ]
     end,
@@ -1797,7 +1717,7 @@ local proxyMT = {
 --- @param slime GUI.Setup
 --- @return GUI.Element
 function gooey.makeSlime( slime )
-    --- @cast slime GUI.Element()
+    --- @cast slime GUI.Element
     slime.parent = nil
     slime.children = teacher.makeList()
 
@@ -2327,6 +2247,33 @@ end
 
 -- Input
 
+
+--- @package
+--- @return GUI.Element
+function element:findTopOfTree()
+    if self.parent then return self.parent:findTopOfTree() end
+    return self
+end
+
+
+function element:handleTreeInput( mouseX, mouseY )
+    local top = self:findTopOfTree()
+    top:handleInput( mouseX, mouseY )
+end
+
+
+--- @package
+function element:handleInput( mouseX, mouseY )
+    self:mouseMoved( mouseX, mouseY )
+    self:tryPressed()
+    self:tryReleased()
+
+    for _, child in ipairs( self.children ) do
+        child:handleInput( mouseX, mouseY )
+    end
+end
+
+
 --- @package
 --- @param x number
 --- @param y number
@@ -2339,6 +2286,7 @@ function element:mouseMoved( x, y )
     if self.mouseInElement and ( not( inX ) or not( inY ) ) then
         if self.mouseExited then self:mouseExited() end
         self.mouseInElement = false
+        self.mouseDownOnElement = false
 
     elseif not( self.mouseInElement ) and inX and inY then
         if self.mouseEntered then self:mouseEntered() end
@@ -2348,25 +2296,26 @@ end
 
 
 --- @package
---- @param button MouseButton
-function element:mouseButtonClicked( button )
+function element:tryPressed()
     if not( self.inputActive ) then return end
+    if not( captain.isMouseButtonJustPressed( self.mouseButton ) ) then return end
     if not( self.mouseInElement ) then return end
-    if not( self.mouseButton == button ) then return end
     if not( self.mousePressed ) then return end
 
+    self.mouseDownOnElement = true
     self:mousePressed()
 end
 
 
 --- @package
---- @param button MouseButton
-function element:mouseButtonReleased( button )
+function element:tryReleased()
     if not( self.inputActive ) then return end
+    if not( self.mouseDownOnElement ) then return end
+    if captain.isMouseButtonDown( self.mouseButton ) then return end
     if not( self.mouseInElement ) then return end
-    if not( self.mouseButton == button ) then return end
     if not( self.mouseReleased ) then return end
 
+    self.mouseDownOnElement = false
     self:mouseReleased()
 end
 
@@ -2519,8 +2468,6 @@ function callbacks.resize( width, height )
 
     mouseScreenX = math.clamp( math.floor( ( x - translateX ) / scale + 0.5 ), 0, stage.internalWidth )
     mouseScreenY = math.clamp( math.floor( ( y - translateY ) / scale + 0.5 ), 0, stage.internalHeight )
-
-    if currentScene then currentScene:mouseMoved() end
 end
 
 
@@ -2541,23 +2488,17 @@ end
 function callbacks.mousepressed( _, _, button )
     mouseButtonsDown:append( button )
     mouseButtonsJustPressed:append( button )
-
-    if currentScene then currentScene:mouseClicked( button ) end
 end
 
 
 function callbacks.mousereleased( _, _ ,button )
     mouseButtonsDown:erase( button )
-
-    if currentScene then currentScene:mouseReleased( button ) end
 end
 
 
 function callbacks.mousemoved( x, y )
     mouseScreenX = math.floor( ( x - translateX ) / scale + 0.5 )
     mouseScreenY = math.floor( ( y - translateY ) / scale + 0.5 )
-
-    if currentScene then currentScene:mouseMoved() end
 end
 
 
