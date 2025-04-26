@@ -579,6 +579,36 @@ function artist.paintDonut( mode, x, y, outerRadius, innerRadius, color, lineWid
 end
 
 
+--- @param drawMode love.DrawMode
+--- @param x number
+--- @param y number
+--- @param width number
+--- @param height number
+--- @param color Color?
+--- @param lineWidth number?
+function artist.paintTombstone( drawMode, x, y, width, height, color, lineWidth )
+    setColor( color )
+    setLineWidth( lineWidth )
+
+    local halfWidth = width * 0.5
+    local halfHeight = height * 0.5
+
+    y = y - halfWidth * 0.5
+
+    if drawMode == "fill" then
+        love.graphics.rectangle( "fill", x, y + halfHeight, width, halfHeight)
+        love.graphics.arc( "fill", "open", x + halfWidth, y + halfHeight, halfWidth, 0, -math.pi )
+    else
+        love.graphics.line(
+        x, y + halfHeight,
+        x, y + height,
+        x + width, y + height,
+        x + width, y + halfHeight
+        )
+        love.graphics.arc( "line", "open", x + halfWidth, y + halfHeight, halfWidth, 0, -math.pi )
+    end
+end
+
 -- Spritesheet
 
 --- @class SpriteSheet
@@ -1953,7 +1983,7 @@ end
 function element:fit( dimension )
     local padding = self:getPaddingByDimension( dimension )
     local minDimension, maxDimension = makeDimensionMin( dimension ), makeDimensionMax( dimension )
-    self[ dimension ] = self[ dimension ] + padding
+    if not( self:isFixed( dimension ) ) then self[ dimension ] = self[ dimension ] + padding end
 
     if not( self:isExpand( dimension ) ) then self[ dimension ] = max( self[ dimension ], self[ minDimension ] ) end
 
@@ -2203,7 +2233,8 @@ end
 --- @param alignment GUI.HorizontalAlign | GUI.VerticalAlign
 function element:setPosition( axis, dimension, alignment )
     local children = self.children
-    local padding = self:getTopLeftPadding( axis )
+    local topLeftPadding = self:getTopLeftPadding( axis )
+    local bottomRightPadding = self:getBottomRightPadding( axis )
     local offset = 0
     local childSpacing = self.childSpacing
     local justify = getJustify( alignment )
@@ -2211,7 +2242,7 @@ function element:setPosition( axis, dimension, alignment )
     local alongAxis = self:getAlongAxis( dimension )
 
     if alongAxis and ( justify == "center" or justify == "push" ) then
-        justifyOffset = self[ dimension ] - padding - self:getBottomRightPadding( axis )
+        justifyOffset = self[ dimension ] - topLeftPadding - bottomRightPadding
 
         for _, child in ipairs( children ) do
             justifyOffset = justifyOffset - child[ dimension ]
@@ -2223,15 +2254,15 @@ function element:setPosition( axis, dimension, alignment )
     end
 
     for _, child in ipairs( children ) do
-        child[ axis ] = self[ axis ] + padding
+        child[ axis ] = self[ axis ] + topLeftPadding
 
         if alongAxis then
             child[ axis ] = child[ axis ] + offset + justifyOffset
             offset = offset + child[ dimension ]
 
         elseif justify == "center" or justify == "push" then
-            local oppositePadding = self:getBottomRightPadding( axis )
-            local remainingSpace = ( self[ dimension ] - padding - oppositePadding - child[ dimension ] )
+            local oppositePadding = bottomRightPadding
+            local remainingSpace = ( self[ dimension ] - topLeftPadding - oppositePadding - child[ dimension ] )
 
             if justify == "center" then remainingSpace = remainingSpace * 0.5 end
 
