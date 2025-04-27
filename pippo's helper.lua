@@ -115,6 +115,13 @@ function list:pickRandom()
 end
 
 
+function list:popRandom()
+    local index = love.math.random( #self )
+    local value = table.remove( self, index )
+    return value
+end
+
+
 --- @return List
 function list:duplicate()
     local newList = teacher.makeList()
@@ -135,6 +142,17 @@ function list:has( value )
     end
 
     return false
+end
+
+
+--- @param value any
+--- @return integer?
+function list:findIndex( value )
+    for index, lValue in ipairs( self ) do
+        if lValue == value then return index end
+    end
+
+    return nil
 end
 
 
@@ -1615,8 +1633,29 @@ _G.gooey = {}
 local elementStack = teacher.makeList()
 
 
+function gooey.gatherSlimelets()
+    assert( not( elementStack:isEmpty() ) )
+
+    --- @type GUI.Element
+    local next = elementStack:popBack()
+    next:close()
+end
+
+
+local function callClose( slime )
+    assert( not( elementStack:isEmpty() ) )
+
+    --- @type GUI.Element
+    local next = elementStack:popBack()
+    next:close()
+
+    return slime
+end
+
+
 --- @class GUI.Element
 --- @field private __index table
+--- @field private __call function
 ---
 --- In setup, user interfaces when making element
 --- @field private width GUI.SizeMode
@@ -1646,18 +1685,18 @@ local elementStack = teacher.makeList()
 --- @field private shadowOffsetY number
 --- @field private shadowColor Color
 --- @field private mouseButton MouseButton
---- @field x number
---- @field y number
---- @field rotation number
---- @field mouseEntered fun( element : GUI.Element )
---- @field mouseExited fun( element : GUI.Element )
---- @field mousePressed fun( element : GUI.Element )
---- @field mouseReleased fun( element : GUI.Element )
---- @field color Color
---- @field backgroundColor Color
---- @field scale number
---- @field visible boolean
---- @field inputActive boolean
+--- @field package x number
+--- @field package y number
+--- @field package rotation number
+--- @field package mouseEntered fun( element : GUI.Element )
+--- @field package mouseExited fun( element : GUI.Element )
+--- @field package mousePressed fun( element : GUI.Element )
+--- @field package mouseReleased fun( element : GUI.Element )
+--- @field package color Color
+--- @field package backgroundColor Color
+--- @field package scale number
+--- @field package visible boolean
+--- @field package inputActive boolean
 ---
 --- For internal use
 --- @field package parent GUI.Element?
@@ -1674,8 +1713,11 @@ local elementStack = teacher.makeList()
 --- @field private mouseDownOnElement boolean
 --- @field package data table
 ---
+--- @overload fun() : GUI.Element
 local element = {}
+---@diagnostic disable-next-line: assign-type-mismatch
 element.__index = element
+element.__call = callClose
 
 
 local defaults = {
@@ -1709,39 +1751,8 @@ local defaults = {
     mouseInElement = false, mouseDownOnElement = false
 }
 defaults.__index = defaults
+---@diagnostic disable-next-line: param-type-mismatch
 setmetatable( element, defaults )
-
-
---- @type table< string, fun( slime : GUI.Element, key : string, value : any ) >
-local setters = {}
-
-
-setters.x = function ( slime, key, value )
-    slime.data[ key ] = value
-    slime:setPosition( "x", "internalWidth", slime.horizontalAlign )
-end
-
-
-setters.y = function ( slime, key, value )
-    slime.data[ key ] = value
-    slime:setPosition( "y", "internalHeight", slime.verticalAlign )
-end
-
-
-local proxyMT = {
-    __index = function ( self, key )
-        if self.data[ key ] ~= nil then return self.data[ key ] end
-        if defaults[ key ] ~= nil then return defaults[ key ] end
-
-        return element[ key ]
-    end,
-
-    __newindex = function ( self, key, value )
-        local setter = setters[ key ]
-        if setter then setter( self, key, value ) return end
-        self.data[ key ] = value
-    end
-}
 
 
 --- @param slime GUI.Setup
@@ -1751,6 +1762,7 @@ function gooey.makeSlime( slime )
     slime.parent = nil
     slime.children = teacher.makeList()
 
+    ---@diagnostic disable-next-line: param-type-mismatch
     setmetatable( slime, element )
 
     slime:init()
@@ -1762,9 +1774,7 @@ function gooey.makeSlime( slime )
 
     elementStack:append( slime )
 
-    local proxy = setmetatable( { data = slime }, proxyMT )
-
-    return proxy
+    return slime
 end
 
 
@@ -1844,8 +1854,7 @@ end
 --- @private
 --- @param font love.Font
 function element:setupTextHeight( font )
-    local padding = self.verticalPadding
-    self.minHeight = max( self.minHeight, font:getHeight() + padding )
+    self.minHeight = max( self.minHeight, font:getHeight() )
 end
 
 
@@ -1856,15 +1865,6 @@ end
 function element:addChild( child )
     child.parent = self
     self.children:append( child )
-end
-
-
-function gooey.gatherSlimelets()
-    assert( not( elementStack:isEmpty() ) )
-
-    --- @type GUI.Element
-    local next = elementStack:popBack()
-    next:close()
 end
 
 
@@ -1983,12 +1983,15 @@ end
 function element:fit( dimension )
     local padding = self:getPaddingByDimension( dimension )
     local minDimension, maxDimension = makeDimensionMin( dimension ), makeDimensionMax( dimension )
-    if not( self:isFixed( dimension ) ) then self[ dimension ] = self[ dimension ] + padding end
 
     if not( self:isExpand( dimension ) ) then self[ dimension ] = max( self[ dimension ], self[ minDimension ] ) end
 
-    local childSpacing = ( #self.children  - 1 ) * self.childSpacing
-    if self:getAlongAxis( dimension ) then self[ dimension ] = self[ dimension ] + childSpacing end
+    if not( self:isFixed( dimension ) ) then
+        local childSpacing = ( #self.children  - 1 ) * self.childSpacing
+        if self:getAlongAxis( dimension ) then self[ dimension ] = self[ dimension ] + childSpacing end
+
+        self[ dimension ] = self[ dimension ] + padding
+    end
 
     local parent = self.parent
 
